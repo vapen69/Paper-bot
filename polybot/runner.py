@@ -114,6 +114,13 @@ class Bot:
             if r.get("source") == "polymarket" and attendus and set(c.get("parametres") or {}) == attendus:
                 nom, params, validee = c["nom"], c["parametres"], bool(c.get("valide"))
                 source = f"recherche du {str(r.get('genere_le', ''))[:10]}"
+            forcee = getattr(config, "STRATEGIE_FORCEE", None)
+            if forcee and r.get("source") == "polymarket":
+                s = next((x for x in r.get("strategies", []) if x.get("nom") == forcee), None)
+                if s and set(s.get("parametres_retenus") or {}) == set(config.PARAMS_DEFAUT.get(forcee, {})):
+                    nom, params = forcee, s["parametres_retenus"]
+                    validee = bool(s.get("eligible"))
+                    source = f"choix manuel, paramètres de la recherche du {str(r.get('genere_le', ''))[:10]}"
         except Exception:
             pass
         nouvelle = {"nom": nom, "parametres": params, "validee": validee, "source": source}

@@ -42,6 +42,13 @@ PARAMS_DEFAUT = {
     "contre_mouvement": {"ecart": 0.10, "fenetre_h": 6, "sortie_h": 24},
 }
 
+# Choix manuel (25 nov. 2026, décidé avec l'utilisateur) : la recherche a montré que favori_echeance PERD
+# hors échantillon (-8,4 % par trade). On teste donc en direct la seule stratégie positive hors échantillon,
+# contre_mouvement (+15,5 % par trade, t = 2,04), qui reste NON validée (t < 2,5, pire baisse 64 %) : mises réduites.
+# Les paramètres sont repris de la recherche à chaque mise à jour (parametres_retenus). Mettre None pour revenir
+# au choix automatique de la recherche.
+STRATEGIE_FORCEE = "contre_mouvement"
+
 # ---------- taille des positions ----------
 PART_PAR_MARCHE = 0.06          # 6 % de la valeur par marché quand la stratégie est validée par la recherche
 PART_PAR_MARCHE_NON_VALIDEE = 0.04   # 4 % seulement tant que rien n'est prouvé
