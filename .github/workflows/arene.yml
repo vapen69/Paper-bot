@@ -1,0 +1,48 @@
+name: Arène Polymarket
+
+on:
+  schedule:
+    - cron: "17 * * * *"   # relance de sécurité chaque heure (attend si une session tourne déjà)
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["arene/**", ".github/workflows/arene.yml"]
+
+concurrency:
+  group: arene
+  cancel-in-progress: ${{ github.event_name == 'push' }}   # une mise à jour du code remplace la session en cours
+
+permissions:
+  contents: write
+  actions: write   # pour relancer lui-même la session suivante
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Récupérer l'état précédent (branche data-arena)
+        run: |
+          mkdir -p arene_out
+          if git ls-remote --exit-code origin data-arena >/dev/null 2>&1; then
+            git fetch -q --depth 1 origin data-arena
+            git --work-tree=arene_out checkout FETCH_HEAD -- . || true
+            git reset -q
+          fi
+          ls -la arene_out
+      - name: Lancer l'arène (session de 5 h 40, argent fictif)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m arene.runner
+      - name: Relancer la session suivante
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run arene.yml --ref main --repo "$GITHUB_REPOSITORY" || echo "relance par le planning horaire"
