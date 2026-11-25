@@ -19,7 +19,7 @@ from .portfolio import Portefeuille
 
 RACINE = Path(__file__).resolve().parent.parent
 DATA = RACINE / "data_out"          # contenu de la branche "data" (state.json, backtest.json)
-DUREE_MAX_S = int(os.environ.get("DUREE_MAX_S", 5 * 3600 + 45 * 60))
+DUREE_MAX_S = int(os.environ.get("DUREE_MAX_S", 5 * 3600 + 40 * 60))
 PUBLIER = os.environ.get("PUBLIER", "1") == "1"
 DEPOT = os.environ.get("GITHUB_REPOSITORY", "")
 TOKEN = os.environ.get("GITHUB_TOKEN", "")
