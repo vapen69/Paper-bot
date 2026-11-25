@@ -181,6 +181,12 @@ const VUE_POLY = `
   <div class="card entre"><h2>Courbe <span id="pPeriode"></span>${SEG("pSeg")}</h2>
     <div class="fig" id="pFig"><svg></svg><div class="bulle" hidden></div></div>
     <div class="legend"><span><i style="background:var(--acc)"></i>Bot</span><span><i style="background:var(--mute)"></i>Départ (100 $)</span><span>Glisse le doigt sur la courbe</span></div></div>
+  <div class="card entre arene"><h2>Arène <span id="aSous">plusieurs stratégies côte à côte</span></h2>
+    <p class="note avert" id="aAvert">Chaque stratégie joue 100 $ fictifs, avec la même simulation que le bot. Avec autant de courbes, l'une monte toujours par chance : l'arène repère des pistes, la recherche décide.</p>
+    <div class="fig" id="aFig"><svg></svg><div class="bulle" hidden></div></div>
+    <div class="legend"><span><i style="background:var(--mute)"></i>Départ (100 $)</span><span><i class="pointille"></i>Hasard (référence)</span><span>Touche une ligne du classement pour suivre sa courbe</span></div>
+    <div id="aListe"></div><div id="aCopie"></div>
+    <details class="note"><summary>Derniers paris de l'arène</summary><div id="aTrades"></div></details></div>
   <div class="card entre"><h2>Positions ouvertes <span id="pCash"></span></h2><div id="pPositions"></div></div>
   ${COMMANDES("commande_poly.yml", "100 $")}
   <div class="card entre"><h2>Derniers trades <span id="pNbTrades"></span></h2><div id="pTrades"></div></div>
@@ -205,7 +211,7 @@ function montreVue(v, pousse) {
   document.title = v === "poly" ? "Paper Bot · Polymarket" : "Paper Bot";
   if (pousse) { if (T.lienVue) history.replaceState(null, "", v === "poly" ? "#polymarket" : "#crypto"); else history.replaceState(null, "", v === "poly" ? "poly.html" : "index.html"); }
   document.querySelectorAll(`#${v === "poly" ? "vuePoly" : "vueCrypto"} .entre`).forEach((el, i) => { el.style.animationDelay = Math.round(i * 38 + (((i * 2654435761) >>> 0) % 23)) + "ms"; el.classList.remove("entre"); void el.offsetWidth; el.classList.add("entre"); });
-  if (v === "crypto" && C.S) dessineC(); if (v === "poly" && P.S) dessineP();
+  if (v === "crypto" && C.S) dessineC(); if (v === "poly" && P.S) dessineP(); if (v === "poly" && A.S) dessineA();
 }
 document.querySelector(".switch").addEventListener("click", ev => { const a = ev.target.closest("a[data-vue]"); if (!a) return; ev.preventDefault(); montreVue(a.dataset.vue, true); });
 addEventListener("hashchange", () => { if (T.lienVue) montreVue(location.hash === "#polymarket" ? "poly" : "crypto", false); });
@@ -499,6 +505,85 @@ async function refreshP() {
 }
 async function refreshRechercheP() { P.RS = await lireData("data-poly", "research_poly.json"); try { renderRechercheP(); } catch (e) { console.error(e); } }
 
+/* ---------- arène (plusieurs stratégies en argent fictif, branche data-arena) ---------- */
+const A = {S: null, sel: null};
+const hashTxt = t => { let h = 2166136261; for (const c of String(t)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return (h >>> 0) / 4294967296; };
+function dessineA() {
+  const S = A.S, fig = $("aFig"), svg = fig.querySelector("svg"), bulle = fig.querySelector(".bulle");
+  const W = svg.clientWidth, H = svg.clientHeight, cs = S?.concurrents || [], pts = (S?.courbe || []).filter(p => p && p.v);
+  if (!S || pts.length < 2 || !W) { svg.innerHTML = `<text x="12" y="24" fill="#7d958c" font-size="13">${S ? "Les courbes se remplissent toutes les 15 minutes." : "Chargement de l'arène…"}</text>`; fig._a = null; return; }
+  const base = n(S.capital_depart) || 100, ids = cs.map(c => c.id);
+  const vals = pts.flatMap(p => ids.map(i => p.v[i])).concat(base).filter(Number.isFinite);
+  const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * .12 || 1;
+  const t0 = new Date(pts[0].t).getTime(), t1 = new Date(pts[pts.length - 1].t).getTime() || t0 + 1;
+  const x = t => 46 + (new Date(t).getTime() - t0) / Math.max(1, t1 - t0) * (W - 56), y = v => H - 22 - (v - (lo - pad)) / (hi - lo + 2 * pad) * (H - 34);
+  const tete = [...cs].sort((a, b) => n(b.valeur) - n(a.valeur))[0]?.id, focus = A.sel || tete;
+  const premier = fig._cle !== pts.length + ":" + W; fig._cle = pts.length + ":" + W;
+  let out = [lo, (lo + hi) / 2, hi].map(t => `<line x1="46" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke="#1d302b"/><text x="0" y="${y(t) + 4}" fill="#7d958c" font-size="11" font-family="JetBrains Mono,monospace">${esc(fr(t, 0))}</text>`).join("");
+  out += `<line x1="46" x2="${W}" y1="${y(base)}" y2="${y(base)}" stroke="#7d958c" stroke-dasharray="3 4" opacity=".55"/>`;
+  const ordre = cs.filter(c => c.id !== focus).concat(cs.filter(c => c.id === focus));
+  for (const c of ordre) {
+    const p = pts.filter(q => Number.isFinite(q.v[c.id])); if (p.length < 2) continue;
+    const d = p.map((q, i) => (i ? "L" : "M") + x(q.t).toFixed(1) + "," + y(q.v[c.id]).toFixed(1)).join("");
+    const on = c.id === focus, ref = c.reference;
+    const dur = (1.1 + hashTxt(c.id) * .6).toFixed(2), ret = (hashTxt(c.id + "r") * .35).toFixed(2);
+    out += `<path class="trace${premier && !calme ? " dessine" : ""}" style="animation-duration:${dur}s;animation-delay:${ret}s" d="${d}" fill="none" stroke="${esc(c.couleur)}" stroke-width="${on ? 2.6 : 1.3}" stroke-linejoin="round" opacity="${on ? 1 : A.sel ? .18 : .42}"${ref ? ' stroke-dasharray="5 4"' : ""}/>`;
+    const l = p[p.length - 1];
+    out += `<circle cx="${x(l.t)}" cy="${y(l.v[c.id])}" r="${on ? 4 : 2.4}" fill="${esc(c.couleur)}" opacity="${on ? 1 : .55}"${on ? ' stroke="#081110" stroke-width="2"' : ""}/>`;
+    if (on) out += `<circle class="bout" cx="${x(l.t)}" cy="${y(l.v[c.id])}" r="4" fill="${esc(c.couleur)}"/>`;
+  }
+  out += `<text x="46" y="${H - 4}" fill="#7d958c" font-size="11">${esc(heure(pts[0].t))}</text><text x="${W}" y="${H - 4}" fill="#7d958c" font-size="11" text-anchor="end">${esc(heure(pts[pts.length - 1].t))}</text>`;
+  out += `<g id="aFigCur" visibility="hidden"><line y1="8" y2="${H - 22}" stroke="#e7f0ea" stroke-opacity=".35"/></g>`;
+  svg.innerHTML = out;
+  svg.querySelectorAll(".trace").forEach(p => { try { p.style.setProperty("--len", Math.ceil(p.getTotalLength()) + ""); } catch (e) {} });
+  fig._a = {pts, cs, x, W};
+  if (!fig._ecoute) {
+    fig._ecoute = true;
+    const bouge = ev => { const o = fig._a; if (!o) return; const r = svg.getBoundingClientRect(), px = ev.clientX - r.left;
+      let i = 0, best = Infinity; o.pts.forEach((q, k) => { const dx = Math.abs(o.x(q.t) - px); if (dx < best) { best = dx; i = k; } });
+      const q = o.pts[i], cx = o.x(q.t), g = $("aFigCur"); if (!g) return;
+      g.setAttribute("visibility", "visible"); g.querySelector("line").setAttribute("x1", cx); g.querySelector("line").setAttribute("x2", cx);
+      const rang = o.cs.filter(c => Number.isFinite(q.v[c.id])).sort((a, b) => q.v[b.id] - q.v[a.id]);
+      const montre = rang.slice(0, 4).concat(A.sel && !rang.slice(0, 4).some(c => c.id === A.sel) ? rang.filter(c => c.id === A.sel) : []);
+      bulle.hidden = false; bulle.style.left = Math.max(80, Math.min(o.W - 80, cx)) + "px";
+      bulle.innerHTML = `<div class="r">${esc(heure(q.t))}</div>` + montre.map(c => `<div><span style="color:${esc(c.couleur)}">●</span> ${esc(c.nom)} <b class="num">${esc(usd(q.v[c.id]))}</b></div>`).join(""); };
+    const sort = () => { bulle.hidden = true; const g = $("aFigCur"); if (g) g.setAttribute("visibility", "hidden"); };
+    fig.addEventListener("pointermove", bouge); fig.addEventListener("pointerdown", bouge); fig.addEventListener("pointerleave", sort); fig.addEventListener("pointercancel", sort);
+  }
+}
+function renderA() {
+  const S = A.S;
+  if (!S) { $("aListe").innerHTML = `<div class="empty">L'arène démarre : les premières positions arrivent dans quelques minutes.</div>`; dessineA(); return; }
+  if (S.avertissement) $("aAvert").textContent = S.avertissement;
+  const cs = [...(S.concurrents || [])].sort((a, b) => n(b.valeur) - n(a.valeur)), base = n(S.capital_depart) || 100;
+  const hasard = cs.find(c => c.reference), ampl = Math.max(1, ...cs.map(c => Math.abs(n(c.valeur) - base)));
+  $("aSous").textContent = `${cs.length} stratégies · ${cs.reduce((s, c) => s + n(c.reglees), 0)} paris réglés`;
+  $("aListe").innerHTML = cs.map((c, i) => {
+    const d = n(c.valeur) - base, l = Math.abs(d) / ampl * 50, on = A.sel === c.id;
+    const g = n(c.reglees) ? Math.round(n(c.gagnants) / n(c.reglees) * 100) + " % gagnés" : "aucun réglé";
+    const bat = hasard && !c.reference ? (n(c.valeur) > n(hasard.valeur) ? "bat le hasard" : "sous le hasard") : "";
+    const etiquette = c.reference ? `<span class="tag neutre">RÉFÉRENCE</span>` : c.experimental ? `<span class="tag exp">EXPÉRIMENTAL</span>` : "";
+    const delai = calme ? 0 : Math.round(i * 38 + hashTxt(c.id) * 30);
+    return `<button class="arow${on ? " on" : ""}" data-id="${esc(c.id)}" style="--c:${esc(c.couleur)};animation-delay:${delai}ms" aria-pressed="${on}">
+      <span class="rang num">${i + 1}</span><span class="pastille"></span>
+      <span class="corps"><span class="nom">${esc(c.nom)} ${etiquette}</span>
+        <span class="r">${esc(n(c.reglees))} réglés · ${esc(g)}${n(c.positions_ouvertes) ? " · " + esc(n(c.positions_ouvertes)) + " en cours" : ""}${c.t != null ? " · t " + esc(fr(c.t, 2)) : ""}${bat ? " · " + bat : ""}</span>
+        <span class="barre"><i class="${d >= 0 ? "up" : "down"}" style="${d >= 0 ? "left:50%" : "right:50%"};width:${l.toFixed(1)}%"></i></span>
+        ${on ? `<span class="r desc">${esc(c.desc)} Frais payés : ${esc(usd(c.frais))}. Gain encaissé : ${esc(usd(c.pnl_regle))}. Baisse max : ${esc(fr(n(c.baisse_max) * 100, 1))} %.</span>` : ""}</span>
+      <span class="num val"><b>${esc(usd(c.valeur))}</b><span class="${d >= 0 ? "up" : "down"}">${esc((d >= 0 ? "+" : "") + fr(d))} $</span></span></button>`; }).join("");
+  const cl = S.classement || {};
+  const etat = cl.etat === "actif" ? `active, ${esc(n(cl.copies))} achat(s) copié(s)` : cl.etat === "en veille" ? `en veille : le classement Polymarket n'est pas lisible depuis GitHub${cl.erreur ? " (" + esc(cl.erreur) + ")" : ""}` : "en attente du premier essai";
+  $("aCopie").innerHTML = `<p class="note">Copie du classement : ${etat}.${(cl.suivis || []).length ? " Suivis : " + cl.suivis.slice(0, 5).map(s => `${esc(s.nom || s.wallet)} (+${esc(n(s.pnl).toLocaleString("fr-FR"))} $)`).join(", ") + "." : ""}</p>`;
+  $("aTrades").innerHTML = (S.derniers_trades || []).slice(0, 25).map(t => `<div class="row"><div><span class="tag" style="background:${esc(t.couleur)}22;color:${esc(t.couleur)}">${esc(t.nom)}</span>${esc(t.sens === "achat" ? "achat" : t.sens === "reglement" ? "réglé" : "vente")} « ${esc(t.issue)} » à ${esc(proba(t.prix))}<div class="r">${esc(t.question)} · ${esc(heure(t.t))}</div></div><div class="num ${t.pnl == null ? "" : n(t.pnl) >= 0 ? "up" : "down"}">${t.pnl == null ? esc(usd(t.montant)) : esc((n(t.pnl) >= 0 ? "+" : "") + fr(t.pnl)) + " $"}</div></div>`).join("") || `<div class="empty">Aucun pari pour l'instant.</div>`;
+  dessineA();
+}
+$("aListe").addEventListener("click", ev => { const b = ev.target.closest(".arow"); if (!b) return; A.sel = A.sel === b.dataset.id ? null : b.dataset.id; $("aFig")._cle = null; renderA(); });
+async function refreshA() {
+  const s = await lireData("data-arena", "state_arena.json");
+  if (s && typeof s === "object" && Array.isArray(s.concurrents)) A.S = s;
+  try { renderA(); } catch (e) { console.error(e); }
+}
+
 /* ---------- horloge commune ---------- */
 setInterval(() => {
   $("horloge").textContent = new Date().toLocaleTimeString("fr-FR");
@@ -511,13 +596,14 @@ setInterval(() => {
   if (T.parSeconde) T.parSeconde(vue === "poly" ? (P.S ? valeurP() : null) : (C.S ? valeurC() : null), vue);
 }, 1000);
 
-const ro = new ResizeObserver(es => es.forEach(e => { const w = Math.round(e.contentRect.width); if (e.target._w === w) return; e.target._w = w; if (e.target.id === "cFig" && vue === "crypto") dessineC(); if (e.target.id === "pFig" && vue === "poly") dessineP(); }));
-ro.observe($("cFig")); ro.observe($("pFig"));
+const ro = new ResizeObserver(es => es.forEach(e => { const w = Math.round(e.contentRect.width); if (e.target._w === w) return; e.target._w = w; if (e.target.id === "cFig" && vue === "crypto") dessineC(); if (e.target.id === "pFig" && vue === "poly") dessineP(); if (e.target.id === "aFig" && vue === "poly") dessineA(); }));
+ro.observe($("cFig")); ro.observe($("pFig")); ro.observe($("aFig"));
 montreVue(vue, false);
 compteARebours();
-refreshC(); refreshP(); refreshTestsC(); refreshRechercheP(); historiqueKraken();
+refreshC(); refreshP(); refreshA(); refreshTestsC(); refreshRechercheP(); historiqueKraken();
+setInterval(refreshA, 60000);
 setInterval(refreshC, 60000); setInterval(refreshP, 30000); setInterval(tickP, T.pollPrix ? 15000 : 8000);
 setInterval(refreshTestsC, 600000); setInterval(refreshRechercheP, 600000);
 if (T.pollPrix) { pollKraken(); setInterval(pollKraken, 5000); }
-window.PB = {C, P, valeurC, valeurP};
+window.PB = {C, P, A, valeurC, valeurP};
 })();
