@@ -16,7 +16,7 @@ def construire() -> str:
     return f"""<title>Paper Bot</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Martian+Mono:wght@400;500&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <script type="application/json" id="claude-artifacts-manifest">{{"permissions": ["full-access", "notifications"]}}</script>
 <style>
 {css}

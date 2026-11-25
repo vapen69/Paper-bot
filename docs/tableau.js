@@ -50,7 +50,7 @@ function compteur(el, cible, fmt, halo) {
   const depart = el._v;
   el._v = cible;
   if (depart == null || calme || Math.abs(cible - depart) < 1e-9) { el.innerHTML = fmt(cible); return; }
-  if (halo && Math.abs(cible - depart) > 1e-6) { el.classList.remove("monte", "baisse"); void el.offsetWidth; el.classList.add(cible > depart ? "monte" : "baisse"); clearTimeout(el._h); el._h = setTimeout(() => el.classList.remove("monte", "baisse"), 900); }
+  if (halo && Math.abs(cible - depart) > 1e-6) { el.classList.remove("monte", "baisse"); void el.offsetWidth; el.classList.add(cible > depart ? "monte" : "baisse"); clearTimeout(el._h); el._h = setTimeout(() => el.classList.remove("monte", "baisse"), 450); }
   const t0 = performance.now(), dur = 650;
   cancelAnimationFrame(el._raf);
   const pas = t => { const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.innerHTML = fmt(depart + (cible - depart) * e); if (k < 1) el._raf = requestAnimationFrame(pas); };
@@ -61,7 +61,7 @@ function ambiance(d) { document.documentElement.style.setProperty("--glow", d >=
 /* Petite courbe sans axes. */
 function sparkSvg(vals, couleur, h = 38) {
   const v = vals.filter(Number.isFinite);
-  if (v.length < 2) return `<svg viewBox="0 0 100 ${h}" preserveAspectRatio="none"><line x1="0" x2="100" y1="${h / 2}" y2="${h / 2}" stroke="#253040" stroke-dasharray="2 3"/></svg>`;
+  if (v.length < 2) return `<svg viewBox="0 0 100 ${h}" preserveAspectRatio="none"><line x1="0" x2="100" y1="${h / 2}" y2="${h / 2}" stroke="#1d302b" stroke-dasharray="2 3"/></svg>`;
   const lo = Math.min(...v), hi = Math.max(...v), r = hi - lo || 1;
   const pts = v.map((x, i) => [i / (v.length - 1) * 100, h - 3 - (x - lo) / r * (h - 6)]);
   const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(2) + "," + p[1].toFixed(2)).join("");
@@ -75,7 +75,7 @@ function sparkSvg(vals, couleur, h = 38) {
 function courbe(fig, pts, series, base, fmt, cle) {
   const svg = fig.querySelector("svg"), bulle = fig.querySelector(".bulle");
   const W = svg.clientWidth, H = svg.clientHeight;
-  if (pts.length < 2 || !W) { svg.innerHTML = `<text x="12" y="24" fill="#8693a2" font-size="13">La courbe se remplit au fil des heures.</text>`; fig._pts = null; return; }
+  if (pts.length < 2 || !W) { svg.innerHTML = `<text x="12" y="24" fill="#7d958c" font-size="13">La courbe se remplit au fil des heures.</text>`; fig._pts = null; return; }
   const vals = pts.flatMap(p => series.map(s => p[s.k])).concat(base).filter(Number.isFinite);
   const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * .12 || 1;
   const y = v => H - 22 - (v - (lo - pad)) / (hi - lo + 2 * pad) * (H - 34), x = i => 46 + i / (pts.length - 1) * (W - 56);
@@ -83,15 +83,15 @@ function courbe(fig, pts, series, base, fmt, cle) {
   const ticks = [lo, (lo + hi) / 2, hi];
   const premier = fig._cle !== cle; fig._cle = cle;
   let out = `<defs>${series.map((s, i) => `<linearGradient id="aire${i}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${s.c}" stop-opacity="${i ? .10 : .30}"/><stop offset="1" stop-color="${s.c}" stop-opacity="0"/></linearGradient>`).join("")}</defs>`;
-  out += ticks.map(t => `<line x1="46" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke="#253040"/><text x="0" y="${y(t) + 4}" fill="#8693a2" font-size="11" font-family="JetBrains Mono,monospace">${esc(fr(t, W < 520 ? 0 : 1))}</text>`).join("");
-  out += `<line x1="46" x2="${W}" y1="${y(base)}" y2="${y(base)}" stroke="#8693a2" stroke-dasharray="3 4" opacity=".55"/>`;
+  out += ticks.map(t => `<line x1="46" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke="#1d302b"/><text x="0" y="${y(t) + 4}" fill="#7d958c" font-size="11" font-family="JetBrains Mono,monospace">${esc(fr(t, W < 520 ? 0 : 1))}</text>`).join("");
+  out += `<line x1="46" x2="${W}" y1="${y(base)}" y2="${y(base)}" stroke="#7d958c" stroke-dasharray="3 4" opacity=".55"/>`;
   series.slice().reverse().forEach(s => { const i = series.indexOf(s), d = chemin(s.k);
     out += `<path d="${d}L${x(pts.length - 1).toFixed(1)},${H - 22}L46,${H - 22}Z" fill="url(#aire${i})"/>`;
     out += `<path class="trace${premier && !calme ? " dessine" : ""}" d="${d}" fill="none" stroke="${s.c}" stroke-width="${i ? 1.6 : 2.4}" stroke-linejoin="round" opacity="${i ? .85 : 1}"/>`; });
   const lx = x(pts.length - 1), ly = y(pts[pts.length - 1][series[0].k]);
-  out += `<circle class="bout" cx="${lx}" cy="${ly}" r="4" fill="${series[0].c}"/><circle cx="${lx}" cy="${ly}" r="4" fill="${series[0].c}" stroke="#0b0f15" stroke-width="2"/>`;
-  out += `<text x="46" y="${H - 4}" fill="#8693a2" font-size="11">${esc(heure(pts[0].t))}</text><text x="${W}" y="${H - 4}" fill="#8693a2" font-size="11" text-anchor="end">${esc(heure(pts[pts.length - 1].t))}</text>`;
-  out += `<g id="${fig.id}Cur" visibility="hidden"><line y1="8" y2="${H - 22}" stroke="#e8edf2" stroke-opacity=".35"/>${series.map(s => `<circle r="4.5" fill="${s.c}" stroke="#0b0f15" stroke-width="2"/>`).join("")}</g>`;
+  out += `<circle class="bout" cx="${lx}" cy="${ly}" r="4" fill="${series[0].c}"/><circle cx="${lx}" cy="${ly}" r="4" fill="${series[0].c}" stroke="#081110" stroke-width="2"/>`;
+  out += `<text x="46" y="${H - 4}" fill="#7d958c" font-size="11">${esc(heure(pts[0].t))}</text><text x="${W}" y="${H - 4}" fill="#7d958c" font-size="11" text-anchor="end">${esc(heure(pts[pts.length - 1].t))}</text>`;
+  out += `<g id="${fig.id}Cur" visibility="hidden"><line y1="8" y2="${H - 22}" stroke="#e7f0ea" stroke-opacity=".35"/>${series.map(s => `<circle r="4.5" fill="${s.c}" stroke="#081110" stroke-width="2"/>`).join("")}</g>`;
   svg.innerHTML = out;
   svg.querySelectorAll(".trace").forEach(p => { try { p.style.setProperty("--len", Math.ceil(p.getTotalLength()) + ""); } catch (e) {} });
   fig._pts = {pts, series, x, y, W, fmt};
@@ -127,7 +127,7 @@ const COMMANDES = (fichier, cent) => `<div class="card entre"><h2>Commandes <spa
 const SEG = id => `<div class="seg" id="${id}"><button data-p="6h">6 h</button><button data-p="24h">24 h</button><button data-p="7j">7 j</button><button data-p="tout" class="on">Tout</button></div>`;
 
 const VUE_CRYPTO = `
-  <header><h1>Paper Bot · crypto</h1><span id="cStatut" class="pill">…</span></header>
+  <header><h1>Paper Bot <em>crypto</em></h1><span id="cStatut" class="pill">…</span></header>
   <div id="cErr" class="err" hidden></div>
   <section class="hero">
     <div class="lab">Valeur du portefeuille (argent fictif) <span class="live"><i id="cDot" class="dot"></i><span id="cLive">connexion…</span></span></div>
@@ -136,7 +136,7 @@ const VUE_CRYPTO = `
   </section>
   <div class="cours">
     <div class="coin entre" id="coinBTC"></div><div class="coin entre" id="coinETH"></div>
-    <div class="coin decis entre"><svg class="ring" viewBox="0 0 62 62"><circle cx="31" cy="31" r="26" fill="none" stroke="#253040" stroke-width="5"/><circle id="cRing" cx="31" cy="31" r="26" fill="none" stroke="#4da3ff" stroke-width="5" stroke-linecap="round" transform="rotate(-90 31 31)" stroke-dasharray="163.4" stroke-dashoffset="0"/></svg>
+    <div class="coin decis entre"><svg class="ring" viewBox="0 0 62 62"><circle cx="31" cy="31" r="26" fill="none" stroke="#1d302b" stroke-width="5"/><circle id="cRing" cx="31" cy="31" r="26" fill="none" stroke="#7cc4ff" stroke-width="5" stroke-linecap="round" transform="rotate(-90 31 31)" stroke-dasharray="163.4" stroke-dashoffset="0"/></svg>
       <div><span>Prochaine décision</span><b class="num" id="cCompte">--:--:--</b><span>à minuit UTC (1 h du matin à Paris en hiver)</span></div></div>
   </div>
   <div class="kpis">
@@ -147,7 +147,7 @@ const VUE_CRYPTO = `
   </div>
   <div class="card entre"><h2>Courbe <span id="cPeriode"></span>${SEG("cSeg")}</h2>
     <div class="fig" id="cFig"><svg></svg><div class="bulle" hidden></div></div>
-    <div class="legend"><span><i style="background:var(--acc)"></i>Bot</span><span><i style="background:var(--btc)"></i>Garder du BTC</span><span><i style="background:var(--mute)"></i>Départ (100 €)</span><span>Glisse le doigt sur la courbe</span></div></div>
+    <div class="legend"><span><i style="background:var(--acc)"></i>Bot</span><span><i style="background:var(--ref)"></i>Garder du BTC</span><span><i style="background:var(--mute)"></i>Départ (100 €)</span><span>Glisse le doigt sur la courbe</span></div></div>
   <div class="card entre"><h2>Positions ouvertes <span id="cCash"></span></h2><div id="cPositions"></div></div>
   ${COMMANDES("commande.yml", "100 €")}
   <div class="card entre"><h2>Derniers trades <span id="cNbTrades"></span></h2><div id="cTrades"></div></div>
@@ -157,7 +157,7 @@ const VUE_CRYPTO = `
   <p class="note" id="cMaj"></p>`;
 
 const VUE_POLY = `
-  <header><h1>Paper Bot · Polymarket</h1><span id="pStatut" class="pill">…</span></header>
+  <header><h1>Paper Bot <em>Polymarket</em></h1><span id="pStatut" class="pill">…</span></header>
   <div id="pErr" class="err" hidden></div>
   <section class="hero">
     <div class="lab">Valeur du portefeuille (argent fictif) <span class="live"><i id="pDot" class="dot"></i><span id="pLive">connexion…</span></span></div>
@@ -172,15 +172,15 @@ const VUE_POLY = `
     <div class="kpi entre"><span>Frais payés</span><b class="num" id="kPFrais">-</b></div>
   </div>
   <div class="card entre"><h2>Activité du bot <span id="pScanAge"></span></h2>
-    <div class="pouls"><div class="radar"><svg viewBox="0 0 62 62"><circle cx="31" cy="31" r="28" fill="none" stroke="#253040"/><circle cx="31" cy="31" r="18" fill="none" stroke="#253040"/><circle cx="31" cy="31" r="8" fill="none" stroke="#253040"/>
-      <defs><linearGradient id="bal" x1="0" x2="1"><stop offset="0" stop-color="#9d8cff" stop-opacity="0"/><stop offset="1" stop-color="#9d8cff" stop-opacity=".8"/></linearGradient></defs>
+    <div class="pouls"><div class="radar"><svg viewBox="0 0 62 62"><circle cx="31" cy="31" r="28" fill="none" stroke="#1d302b"/><circle cx="31" cy="31" r="18" fill="none" stroke="#1d302b"/><circle cx="31" cy="31" r="8" fill="none" stroke="#1d302b"/>
+      <defs><linearGradient id="bal" x1="0" x2="1"><stop offset="0" stop-color="#7cc4ff" stop-opacity="0"/><stop offset="1" stop-color="#7cc4ff" stop-opacity=".8"/></linearGradient></defs>
       <path class="bal" id="pRadar" d="M31 31 L31 3 A28 28 0 0 1 55.2 17 Z" fill="url(#bal)"/></svg></div>
       <div><b class="num" id="aScan">-</b><span>marchés scannés</span></div><div><b class="num" id="aFiltres">-</b><span>dans les filtres</span></div>
       <div><b class="num" id="aCand">-</b><span>candidats</span></div><div><b class="num" id="aCarnets">-</b><span>carnets lus</span></div></div>
     <div class="feed" id="pFlux"></div></div>
   <div class="card entre"><h2>Courbe <span id="pPeriode"></span>${SEG("pSeg")}</h2>
     <div class="fig" id="pFig"><svg></svg><div class="bulle" hidden></div></div>
-    <div class="legend"><span><i style="background:var(--poly)"></i>Bot</span><span><i style="background:var(--mute)"></i>Départ (100 $)</span><span>Glisse le doigt sur la courbe</span></div></div>
+    <div class="legend"><span><i style="background:var(--acc)"></i>Bot</span><span><i style="background:var(--mute)"></i>Départ (100 $)</span><span>Glisse le doigt sur la courbe</span></div></div>
   <div class="card entre arene"><h2>Arène <span id="aSous">plusieurs stratégies côte à côte</span></h2>
     <p class="note avert" id="aAvert">Chaque stratégie joue 100 $ fictifs, avec la même simulation que le bot. Avec autant de courbes, l'une monte toujours par chance : l'arène repère des pistes, la recherche décide.</p>
     <div class="fig" id="aFig"><svg></svg><div class="bulle" hidden></div></div>
@@ -210,7 +210,7 @@ function montreVue(v, pousse) {
   g.style.left = a.offsetLeft + "px"; g.style.width = a.offsetWidth + "px";
   document.title = v === "poly" ? "Paper Bot · Polymarket" : "Paper Bot";
   if (pousse) { if (T.lienVue) history.replaceState(null, "", v === "poly" ? "#polymarket" : "#crypto"); else history.replaceState(null, "", v === "poly" ? "poly.html" : "index.html"); }
-  document.querySelectorAll(`#${v === "poly" ? "vuePoly" : "vueCrypto"} .entre`).forEach((el, i) => { el.style.animationDelay = (i * 45) + "ms"; el.classList.remove("entre"); void el.offsetWidth; el.classList.add("entre"); });
+  document.querySelectorAll(`#${v === "poly" ? "vuePoly" : "vueCrypto"} .entre`).forEach((el, i) => { el.style.animationDelay = Math.round(i * 38 + (((i * 2654435761) >>> 0) % 23)) + "ms"; el.classList.remove("entre"); void el.offsetWidth; el.classList.add("entre"); });
   if (v === "crypto" && C.S) dessineC(); if (v === "poly" && P.S) dessineP(); if (v === "poly" && A.S) dessineA();
 }
 document.querySelector(".switch").addEventListener("click", ev => { const a = ev.target.closest("a[data-vue]"); if (!a) return; ev.preventDefault(); montreVue(a.dataset.vue, true); });
@@ -263,8 +263,8 @@ function renderLiveC() {
 function dessineC() {
   const S = C.S; if (!S) return;
   const c = filtrePeriode((S.courbe || []).filter(p => Number.isFinite(Number(p.v))), C.per).map(p => ({t: p.t, v: n(p.v), btc: n(p.btc)}));
-  courbe($("cFig"), c, [{k: "v", c: "#4da3ff", nom: "Bot"}, {k: "btc", c: "#f2a33a", nom: "Garder du BTC"}], n(S.capital_depart) || 100, x => eur(x), C.per + c.length);
-  $("cHeroSpark").innerHTML = sparkSvg((S.courbe || []).slice(-180).map(p => n(p.v)), "#4da3ff", 56);
+  courbe($("cFig"), c, [{k: "v", c: "#7cc4ff", nom: "Bot"}, {k: "btc", c: "#c9b48a", nom: "Garder du BTC"}], n(S.capital_depart) || 100, x => eur(x), C.per + c.length);
+  $("cHeroSpark").innerHTML = sparkSvg((S.courbe || []).slice(-180).map(p => n(p.v)), "#7cc4ff", 56);
 }
 function renderStateC() {
   const S = C.S, st = String(S.statut || "");
@@ -390,7 +390,7 @@ function renderLiveP() {
     const titre = u ? `<a class="q" href="${esc(u)}" target="_blank" rel="noopener">${esc(p.question)}</a>` : `<span class="q">${esc(p.question)}</span>`;
     return `<div class="ppos"><div class="haut"><div>${titre}<div class="sub">Pari sur « ${esc(p.issue)} » ${exp ? '<span class="tag exp">EXPÉRIMENTAL</span>' : ""}</div></div>
       <div style="text-align:right"><div class="num ${pnl >= 0 ? "up" : "down"}">${pnl >= 0 ? "+" : ""}${esc(usd(pnl))}</div><div class="sub num">${esc(pct(n(p.cout) ? pnl / n(p.cout) * 100 : 0))}</div></div></div>
-      <div class="proba" role="img" aria-label="Probabilité actuelle ${esc(proba(px))}, achetée à ${esc(proba(p.prix_entree))}"><i style="width:${borne(px).toFixed(1)}%"></i><em style="left:${borne(p.prix_entree).toFixed(1)}%"></em><b>${esc(proba(px))}</b></div>
+      <div class="proba" role="img" aria-label="Probabilité actuelle ${esc(proba(px))}, achetée à ${esc(proba(p.prix_entree))}"><i style="width:${borne(px).toFixed(1)}%"></i><em style="left:${borne(p.prix_entree).toFixed(1)}%"></em><b${px > 0.5 ? ' class="g"' : ""}>${esc(proba(px))}</b></div>
       <div class="echelle"><span>acheté à ${esc(proba(p.prix_entree))} (trait blanc)</span><span>${esc(n(p.parts).toFixed(1))} parts · ${esc(usd(val))}</span></div>
       <div class="sub"><span class="chrono${e.s != null && e.s < 6 * 3600 ? " bientot" : ""}">${esc(e.txt)}</span> · si « ${esc(p.issue)} » se réalise : +${esc(usd(n(p.parts) - n(p.cout)))}, sinon ${esc(usd(-n(p.cout)))}</div></div>`;
   }).join("") : `<div class="empty">Aucune position ouverte pour l'instant : le bot attend un marché qui passe tous ses filtres.</div>`;
@@ -400,8 +400,8 @@ function renderLiveP() {
 function dessineP() {
   const S = P.S; if (!S) return;
   const c = filtrePeriode((S.courbe || []).filter(p => Number.isFinite(Number(p.v))), P.per).map(p => ({t: p.t, v: n(p.v)}));
-  courbe($("pFig"), c, [{k: "v", c: "#9d8cff", nom: "Bot"}], n(S.capital_depart) || 100, x => usd(x), P.per + c.length);
-  $("pHeroSpark").innerHTML = sparkSvg((S.courbe || []).slice(-180).map(p => n(p.v)), "#9d8cff", 56);
+  courbe($("pFig"), c, [{k: "v", c: "#7cc4ff", nom: "Bot"}], n(S.capital_depart) || 100, x => usd(x), P.per + c.length);
+  $("pHeroSpark").innerHTML = sparkSvg((S.courbe || []).slice(-180).map(p => n(p.v)), "#7cc4ff", 56);
 }
 const TAGS = {achat: ["pari", "ACHAT"], vente: ["vente", "VENTE"], reglement: ["neutre", "RÉSOLU"]};
 const FLUX = {scan: ["neutre", "SCAN"], achat: ["pari", "ACHAT"], vente: ["vente", "VENTE"], reglement: ["gagne", "RÉSOLU"], baleine: ["exp", "BALEINE"], ecarte: ["neutre", "ÉCARTÉ"]};
@@ -418,7 +418,7 @@ function renderStateP() {
   // tableau des paris : un carré par pari réglé (vert gagné, rouge perdu), pointillé pour ceux en cours
   const regles = (S.trades || []).filter(t => t.sens === "reglement" || (t.sens === "vente" && t.pnl != null));
   const nbOuv = posP().length;
-  $("pScore").innerHTML = regles.map((t, i) => `<i class="${n(t.pnl) > 0 ? "g" : n(t.pnl) < 0 ? "p" : ""}${i >= P.nbScore ? " pop" : ""}" style="animation-delay:${Math.max(0, i - P.nbScore) * 60}ms" title="${esc(t.question)} : ${esc((n(t.pnl) >= 0 ? "+" : "") + usd(t.pnl))}"></i>`).join("")
+  $("pScore").innerHTML = regles.map((t, i) => `<i class="${n(t.pnl) > 0 ? "g" : n(t.pnl) < 0 ? "p" : ""}${i >= P.nbScore ? " pop" : ""}" style="animation-delay:${Math.max(0, i - P.nbScore) * 55 + ((i * 2654435761) >>> 0) % 17}ms" title="${esc(t.question)} : ${esc((n(t.pnl) >= 0 ? "+" : "") + usd(t.pnl))}"></i>`).join("")
     + Array.from({length: nbOuv}, () => `<i class="o" title="pari en cours"></i>`).join("");
   P.nbScore = regles.length;
   const g = regles.filter(t => n(t.pnl) > 0).length, pnlR = regles.reduce((a, t) => a + n(t.pnl), 0);
@@ -433,14 +433,14 @@ function renderStateP() {
   $("pFlux").innerHTML = flux.length ? flux.map(f => { const k = f.t + "|" + f.txt, nouveau = !P.premier && !P.vus.has(k); P.vus.add(k); const u = lienPoly(f.url), tg = FLUX[f.type] || ["neutre", "INFO"];
     return `<div class="${nouveau ? "new" : ""}"><time class="num">${esc(hms(f.t))}</time><span><span class="tag ${tg[0]}">${tg[1]}</span>${u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(f.txt)}</a>` : esc(f.txt)}</span></div>`; }).join("")
     : `<div class="empty">Le premier scan arrive dans la minute.</div>`;
-  const tr = [...(S.trades || [])].reverse().slice(0, 30);
+  const tousTr = [...(S.trades || [])].reverse(), tr = tousTr.slice(0, P.tous ? 30 : 8);
   $("pNbTrades").textContent = n(S.nb_trades) + " au total";
   $("pTrades").innerHTML = tr.length ? tr.map(t => {
     let [cls, lab] = TAGS[t.sens] || ["neutre", "?"];
     if (t.sens === "reglement") [cls, lab] = n(t.pnl) > 0 ? ["gagne", "GAGNÉ"] : n(t.pnl) < 0 ? ["perdu", "PERDU"] : ["neutre", "RÉSOLU"];
     const k = t.t + "|" + t.question + "|" + t.sens, neuf = !P.premier && !P.vus.has(k); P.vus.add(k);
     return `<div class="row${neuf ? " neuf" : ""}"><div><span class="tag ${cls}">${lab}</span>${t.strategie === "baleines" ? '<span class="tag exp">EXP.</span>' : ""}<b>${esc(t.issue)}</b> à ${esc(proba(t.prix))}<div>${esc(t.question)}</div><div class="r">${esc(t.raison)}</div></div>
-    <div style="text-align:right" class="num"><div>${esc(usd(t.montant))}</div>${t.pnl != null ? `<div class="${n(t.pnl) >= 0 ? "up" : "down"}">${n(t.pnl) >= 0 ? "+" : ""}${esc(usd(t.pnl))}</div>` : ""}<div class="r">${esc(heure(t.t))}</div></div></div>`; }).join("") : `<div class="empty">Pas encore de trade.</div>`;
+    <div style="text-align:right" class="num"><div>${esc(usd(t.montant))}</div>${t.pnl != null ? `<div class="${n(t.pnl) >= 0 ? "up" : "down"}">${n(t.pnl) >= 0 ? "+" : ""}${esc(usd(t.pnl))}</div>` : ""}<div class="r">${esc(heure(t.t))}</div></div></div>`; }).join("") + (tousTr.length > 8 ? `<button class="plus" id="pPlus">${P.tous ? "Afficher moins" : "Voir les " + Math.min(30, tousTr.length) + " derniers"}</button>` : "") : `<div class="empty">Pas encore de trade.</div>`;
   if (T.notifie && tr.length) { const t = tr[0], k = t.t + "|" + t.question + "|" + t.sens; if (P._dernier && P._dernier !== k) T.notifie(`Polymarket : ${t.sens === "reglement" ? (n(t.pnl) > 0 ? "pari gagné" : "pari perdu") : t.sens} « ${String(t.question).slice(0, 80)} »`); P._dernier = k; }
   P.premier = false;
   const sg = S.strategie || {}, ex = S.experimentale || {}, pm = S.parametres || {};
@@ -474,6 +474,7 @@ function renderRechercheP() {
     ${rows}<details class="note"><summary>Règle de sélection et limites</summary><p>${esc(RS.regle_selection)}</p>${(RS.avertissements || []).map(a => `<p>· ${esc(a)}</p>`).join("")}</details>`;
 }
 segPeriode("pSeg", p => { P.per = p; dessineP(); });
+$("pTrades").addEventListener("click", ev => { if (ev.target.id !== "pPlus") return; P.tous = !P.tous; renderStateP(); });
 
 async function milieu(jeton) {
   const m = await jsonUrl(`${CLOB}/midpoint?token_id=${encodeURIComponent(jeton)}`);
@@ -510,7 +511,7 @@ const hashTxt = t => { let h = 2166136261; for (const c of String(t)) h = Math.i
 function dessineA() {
   const S = A.S, fig = $("aFig"), svg = fig.querySelector("svg"), bulle = fig.querySelector(".bulle");
   const W = svg.clientWidth, H = svg.clientHeight, cs = S?.concurrents || [], pts = (S?.courbe || []).filter(p => p && p.v);
-  if (!S || pts.length < 2 || !W) { svg.innerHTML = `<text x="12" y="24" fill="#8693a2" font-size="13">${S ? "Les courbes se remplissent toutes les 15 minutes." : "Chargement de l'arène…"}</text>`; fig._a = null; return; }
+  if (!S || pts.length < 2 || !W) { svg.innerHTML = `<text x="12" y="24" fill="#7d958c" font-size="13">${S ? "Les courbes se remplissent toutes les 15 minutes." : "Chargement de l'arène…"}</text>`; fig._a = null; return; }
   const base = n(S.capital_depart) || 100, ids = cs.map(c => c.id);
   const vals = pts.flatMap(p => ids.map(i => p.v[i])).concat(base).filter(Number.isFinite);
   const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * .12 || 1;
@@ -518,8 +519,8 @@ function dessineA() {
   const x = t => 46 + (new Date(t).getTime() - t0) / Math.max(1, t1 - t0) * (W - 56), y = v => H - 22 - (v - (lo - pad)) / (hi - lo + 2 * pad) * (H - 34);
   const tete = [...cs].sort((a, b) => n(b.valeur) - n(a.valeur))[0]?.id, focus = A.sel || tete;
   const premier = fig._cle !== pts.length + ":" + W; fig._cle = pts.length + ":" + W;
-  let out = [lo, (lo + hi) / 2, hi].map(t => `<line x1="46" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke="#253040"/><text x="0" y="${y(t) + 4}" fill="#8693a2" font-size="11" font-family="JetBrains Mono,monospace">${esc(fr(t, 0))}</text>`).join("");
-  out += `<line x1="46" x2="${W}" y1="${y(base)}" y2="${y(base)}" stroke="#8693a2" stroke-dasharray="3 4" opacity=".55"/>`;
+  let out = [lo, (lo + hi) / 2, hi].map(t => `<line x1="46" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke="#1d302b"/><text x="0" y="${y(t) + 4}" fill="#7d958c" font-size="11" font-family="JetBrains Mono,monospace">${esc(fr(t, 0))}</text>`).join("");
+  out += `<line x1="46" x2="${W}" y1="${y(base)}" y2="${y(base)}" stroke="#7d958c" stroke-dasharray="3 4" opacity=".55"/>`;
   const ordre = cs.filter(c => c.id !== focus).concat(cs.filter(c => c.id === focus));
   for (const c of ordre) {
     const p = pts.filter(q => Number.isFinite(q.v[c.id])); if (p.length < 2) continue;
@@ -528,11 +529,11 @@ function dessineA() {
     const dur = (1.1 + hashTxt(c.id) * .6).toFixed(2), ret = (hashTxt(c.id + "r") * .35).toFixed(2);
     out += `<path class="trace${premier && !calme ? " dessine" : ""}" style="animation-duration:${dur}s;animation-delay:${ret}s" d="${d}" fill="none" stroke="${esc(c.couleur)}" stroke-width="${on ? 2.6 : 1.3}" stroke-linejoin="round" opacity="${on ? 1 : A.sel ? .18 : .42}"${ref ? ' stroke-dasharray="5 4"' : ""}/>`;
     const l = p[p.length - 1];
-    out += `<circle cx="${x(l.t)}" cy="${y(l.v[c.id])}" r="${on ? 4 : 2.4}" fill="${esc(c.couleur)}" opacity="${on ? 1 : .55}"${on ? ' stroke="#0b0f15" stroke-width="2"' : ""}/>`;
+    out += `<circle cx="${x(l.t)}" cy="${y(l.v[c.id])}" r="${on ? 4 : 2.4}" fill="${esc(c.couleur)}" opacity="${on ? 1 : .55}"${on ? ' stroke="#081110" stroke-width="2"' : ""}/>`;
     if (on) out += `<circle class="bout" cx="${x(l.t)}" cy="${y(l.v[c.id])}" r="4" fill="${esc(c.couleur)}"/>`;
   }
-  out += `<text x="46" y="${H - 4}" fill="#8693a2" font-size="11">${esc(heure(pts[0].t))}</text><text x="${W}" y="${H - 4}" fill="#8693a2" font-size="11" text-anchor="end">${esc(heure(pts[pts.length - 1].t))}</text>`;
-  out += `<g id="aFigCur" visibility="hidden"><line y1="8" y2="${H - 22}" stroke="#e8edf2" stroke-opacity=".35"/></g>`;
+  out += `<text x="46" y="${H - 4}" fill="#7d958c" font-size="11">${esc(heure(pts[0].t))}</text><text x="${W}" y="${H - 4}" fill="#7d958c" font-size="11" text-anchor="end">${esc(heure(pts[pts.length - 1].t))}</text>`;
+  out += `<g id="aFigCur" visibility="hidden"><line y1="8" y2="${H - 22}" stroke="#e7f0ea" stroke-opacity=".35"/></g>`;
   svg.innerHTML = out;
   svg.querySelectorAll(".trace").forEach(p => { try { p.style.setProperty("--len", Math.ceil(p.getTotalLength()) + ""); } catch (e) {} });
   fig._a = {pts, cs, x, W};
