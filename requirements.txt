@@ -1,1 +1,4 @@
 requests>=2.31
+# utilisés uniquement par research/ (le bot en direct n en a pas besoin)
+numpy>=1.26
+pandas>=2.1
