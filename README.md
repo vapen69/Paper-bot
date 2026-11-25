@@ -11,3 +11,12 @@ Aucun argent réel n'est engagé.
 
 Fonctionnement : le workflow « Bot » tourne par sessions de 5 h 45 et se relance tout seul chaque heure.
 L'état (portefeuille, trades, courbe) est publié toutes les 2 minutes sur la branche `data`.
+
+## Arène Polymarket (repérage, argent fictif)
+
+Le workflow « Arène Polymarket » (`arene/`) fait tourner 14 stratégies en parallèle, chacune avec 100 USDC fictifs et
+la même simulation que le bot (carnet d'ordres réel, frais, tenue jusqu'à la résolution), dont une référence « hasard »
+et une copie expérimentale du classement Polymarket (en veille si le classement n'est pas lisible depuis GitHub).
+L'état est publié sur la branche `data-arena` et affiché dans la carte « Arène » de poly.html.
+L'arène repère des pistes : aucune stratégie ne passe dans le bot en direct sans réussir la règle de recherche fixée à
+l'avance. Le bot en direct (`polybot/`) et son état ne sont pas touchés.
