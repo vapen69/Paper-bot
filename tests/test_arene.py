@@ -187,3 +187,14 @@ def test_courbe_eclaircie(arene, monkeypatch):
 def test_t_stat():
     assert runner.t_stat([0.1, 0.2]) is None
     assert runner.t_stat([0.1, 0.12, 0.09, 0.11, 0.1]) > 5
+
+
+def test_aucune_strategie_n_affame_les_suivantes(arene, monkeypatch):
+    # beaucoup de favoris : les premières stratégies ne doivent pas consommer toutes les lectures de carnet
+    lot = [marche(100 + i, prix0=0.92, jours=2) for i in range(30)] + [marche(200, prix0=0.08, jours=10)]
+    monkeypatch.setattr(api, "marches", lambda params, pages=1, par_page=100: lot)
+    monkeypatch.setattr(api, "carnet", lambda j: carnet_autour(0.92 if j.endswith("a") and not j.startswith("200") else
+                                                               0.08 if j == "200a" else 0.92 if j == "200b" else 0.08))
+    arene.scanner()
+    assert "200a" in arene.conc["achat_outsider"]["pf"].positions
+    assert "200b" in arene.conc["contre_outsider_10"]["pf"].positions

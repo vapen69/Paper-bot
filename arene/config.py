@@ -24,7 +24,7 @@ RESOLUTIONS_LOINTAINES = 15     # marchés dont l'échéance n'est pas passée, 
 CLASSEMENT_S = 600
 PUBLI_S = 120
 POINT_COURBE_S = 900            # un point de courbe toutes les 15 min
-CARNETS_PAR_SCAN = 30           # nouveaux carnets lus au plus par scan (cache commun à toutes les stratégies)
+CARNETS_PAR_STRATEGIE = 6       # nouveaux carnets lus au plus par stratégie et par scan (cache commun)
 CARNET_CACHE_S = 20
 JOURS_SCAN_ECHEANCE = 7         # marchés qui se terminent dans les 7 jours, en plus des plus actifs
 
