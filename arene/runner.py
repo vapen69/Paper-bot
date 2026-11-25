@@ -282,12 +282,12 @@ class Arene:
         filtres = [m for m in sorted(self.univers.values(), key=lambda x: -(x["volume24h"] or 0))
                    if not self.filtre_marche(m)]
         self.stats.update(marches_scannes=len(self.univers), dans_filtres=len(filtres), dernier_scan=maintenant())
-        budget = [C.CARNETS_PAR_SCAN]
         heure = math.floor(now / 3600) * 3600
         for c in self.conc.values():
             d = c["def"]
             if d["famille"] not in ("fourchette", "hasard"):
                 continue
+            budget = [C.CARNETS_PAR_STRATEGIE]     # chaque stratégie a sa part : aucune n'affame les suivantes
             for m in filtres:
                 if budget[0] <= 0:
                     break
