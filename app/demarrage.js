@@ -11,8 +11,8 @@ const URL_OK = /^https:\/\/(raw\.githubusercontent\.com|api\.kraken\.com|clob\.p
 function accueil(html) { ACCUEIL.hidden = false; ACCUEIL.innerHTML = html; }
 function icone() {
   const c = document.createElement("canvas"); c.width = c.height = 256; const g = c.getContext("2d");
-  const r = 56; g.fillStyle = "#0b0f15"; g.beginPath(); g.moveTo(r, 0); g.arcTo(256, 0, 256, 256, r); g.arcTo(256, 256, 0, 256, r); g.arcTo(0, 256, 0, 0, r); g.arcTo(0, 0, 256, 0, r); g.fill();
-  const grad = g.createLinearGradient(0, 0, 256, 0); grad.addColorStop(0, "#4da3ff"); grad.addColorStop(1, "#9d8cff");
+  const r = 56; g.fillStyle = "#081110"; g.beginPath(); g.moveTo(r, 0); g.arcTo(256, 0, 256, 256, r); g.arcTo(256, 256, 0, 256, r); g.arcTo(0, 256, 0, 0, r); g.arcTo(0, 0, 256, 0, r); g.fill();
+  const grad = g.createLinearGradient(0, 0, 256, 0); grad.addColorStop(0, "#7cc4ff"); grad.addColorStop(1, "#c9b48a");
   g.strokeStyle = grad; g.lineWidth = 18; g.lineCap = g.lineJoin = "round";
   g.beginPath(); [[40, 180], [92, 128], [130, 156], [214, 70]].forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke();
   g.fillStyle = "#2fd17a"; g.beginPath(); g.arc(214, 70, 16, 0, 7); g.fill();
@@ -38,7 +38,7 @@ if (!desktop?.childProcess) {
 
 /* --- dans la fenêtre de l'appli --- */
 desktop.app.dock.setIcon(icone()).catch(() => {});
-desktop.window.setOptions({width: 1040, height: 900, minWidth: 380, minHeight: 500, backgroundColor: "#0b0f15"}).catch(() => {});
+desktop.window.setOptions({width: 1040, height: 900, minWidth: 380, minHeight: 500, backgroundColor: "#081110"}).catch(() => {});
 
 let plateforme = "win32";
 try { plateforme = await desktop.os.platform(); } catch (e) {}
