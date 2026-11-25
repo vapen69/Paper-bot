@@ -51,7 +51,7 @@ class Portefeuille:
             p = self.positions[sym]
             p["dernier_prix"] = prix[sym]
             p["plus_haut"] = max(p["plus_haut"], prix[sym])
-            if prix[sym] <= p["plus_haut"] * (1 - config.STOP_SUIVEUR):
+            if config.STOP_SUIVEUR and prix[sym] <= p["plus_haut"] * (1 - config.STOP_SUIVEUR):
                 self.vendre(sym, prix[sym], t, f"stop suiveur (-{config.STOP_SUIVEUR*100:.0f} % depuis le plus haut)")
                 ventes.append(sym)
         return ventes

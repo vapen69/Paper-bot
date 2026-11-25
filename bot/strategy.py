@@ -1,4 +1,5 @@
-"""Logique de décision, partagée par le bot en direct et par le backtest."""
+"""Logique de décision, partagée par le bot en direct et par le backtest.
+Réplique exacte de research.strategies.rotation_momentum (paramètres retenus dans config.py)."""
 from . import config
 
 
@@ -8,53 +9,41 @@ def sma(valeurs, n):
     return sum(valeurs[-n:]) / n
 
 
-def marche_favorable(clotures_btc):
-    """Filtre de marché : on n'achète que si le BTC est au-dessus de sa moyenne 200 h."""
-    m = sma(clotures_btc, config.SMA_BTC_H)
-    return m is not None and clotures_btc[-1] > m
+def marche_favorable(clotures_btc_j):
+    """Filtre de marché : BTC au-dessus de sa moyenne 100 jours (clôtures journalières terminées)."""
+    m = sma(clotures_btc_j, config.SMA_BTC_J)
+    return m is not None and clotures_btc_j[-1] > m
 
 
-def classement(clotures):
-    """clotures : {symbole: [clôtures horaires terminées]}.
-    Retourne la liste triée [{symbole, perf, eligible}] du plus fort au plus faible."""
+def jour_de_rebalancement(ts_jour):
+    """ts_jour : timestamp (s) d'ouverture de la bougie journalière qui vient de se terminer."""
+    return (ts_jour // 86400) % config.REBAL_J == 0
+
+
+def classement(clotures_j):
+    """clotures_j : {symbole: [clôtures journalières terminées]}. Trié du plus fort au plus faible sur 7 jours."""
     out = []
-    for sym, c in clotures.items():
-        if len(c) < max(config.LOOKBACK_H + 1, config.SMA_ACTIF_H):
+    for sym, c in clotures_j.items():
+        if len(c) < config.LOOKBACK_J + 1:
             continue
-        perf = c[-1] / c[-1 - config.LOOKBACK_H] - 1
-        m = sma(c, config.SMA_ACTIF_H)
-        eligible = perf > 0 and c[-1] > m
-        out.append({"symbole": sym, "perf": perf, "eligible": eligible})
+        perf = c[-1] / c[-1 - config.LOOKBACK_J] - 1
+        out.append({"symbole": sym, "perf": perf, "eligible": perf > 0})
     out.sort(key=lambda x: x["perf"], reverse=True)
     for i, x in enumerate(out):
         x["rang"] = i + 1
     return out
 
 
-def decisions(detenus, rang, marche_ok):
-    """Retourne (a_vendre, a_acheter) avec la raison de chaque décision.
-    detenus : symboles en portefeuille. rang : sortie de classement()."""
-    par_sym = {x["symbole"]: x for x in rang}
-    a_vendre = {}
+def selection(rang):
+    """Les NB_POSITIONS plus fortes, à condition d'être en hausse sur 7 jours."""
+    return [x["symbole"] for x in rang[: config.NB_POSITIONS] if x["eligible"]]
+
+
+def decisions(detenus, cible, marche_ok):
+    """detenus : symboles en portefeuille ; cible : sélection en vigueur (revue tous les 7 jours).
+    Retourne (a_vendre {sym: raison}, a_acheter [(sym, raison)])."""
     if not marche_ok:
-        for s in detenus:
-            a_vendre[s] = "BTC sous sa moyenne 200 h : passage en cash"
-        return a_vendre, []
-    for s in detenus:
-        x = par_sym.get(s)
-        if x is None:
-            a_vendre[s] = "sorti de l'univers"
-        elif x["rang"] > config.RANG_MAX_CONSERVE:
-            a_vendre[s] = f"tombé au rang {x['rang']} (max {config.RANG_MAX_CONSERVE})"
-        elif not x["eligible"]:
-            a_vendre[s] = "momentum perdu (perf 24 h négative ou sous la moyenne 48 h)"
-    restants = [s for s in detenus if s not in a_vendre]
-    places = config.NB_POSITIONS - len(restants)
-    a_acheter = []
-    for x in rang:
-        if places <= 0:
-            break
-        if x["eligible"] and x["symbole"] not in detenus:
-            a_acheter.append((x["symbole"], f"rang {x['rang']}, +{x['perf']*100:.1f} % sur 24 h"))
-            places -= 1
+        return {s: "BTC sous sa moyenne 100 jours : passage en cash" for s in detenus}, []
+    a_vendre = {s: "ne fait plus partie des 2 plus fortes de la semaine" for s in detenus if s not in cible}
+    a_acheter = [(s, "dans les 2 plus fortes sur 7 jours") for s in cible if s not in detenus]
     return a_vendre, a_acheter

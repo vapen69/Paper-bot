@@ -65,10 +65,10 @@ def tickers(cles):
     return out
 
 
-def bougies_horaires(cle):
-    """Clôtures horaires TERMINÉES (la bougie en cours est retirée : pas de triche sur le futur).
-    Retourne une liste de (timestamp, open, close)."""
-    res = _get("OHLC", {"pair": cle, "interval": 60})
+def bougies(cle, intervalle_min=1440):
+    """Bougies TERMINÉES (la bougie en cours est retirée : pas de triche sur le futur).
+    Journalières par défaut (720 jours max). Retourne une liste de (timestamp, open, close)."""
+    res = _get("OHLC", {"pair": cle, "interval": intervalle_min})
     lignes = next(v for k, v in res.items() if k != "last")
     lignes = lignes[:-1]  # la dernière bougie n'est pas terminée
     time.sleep(1.1)

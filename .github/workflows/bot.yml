@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["bot/**", ".github/workflows/bot.yml"]
+    paths: ["bot/**", ".github/workflows/bot.yml", "requirements.txt"]
 
 concurrency:
   group: bot
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'push' }}   # une mise à jour du code remplace la session en cours
 
 permissions:
   contents: write

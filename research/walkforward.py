@@ -4,6 +4,8 @@ Règles du moteur :
 - le poids décidé à la clôture de l'heure t est exécuté à l'OUVERTURE de l'heure t+1 ;
 - chaque euro échangé coûte frais + slippage (0,40 % + 0,10 %) ;
 - on ne passe des ordres que lorsque la cible change ; entre deux, les positions dérivent avec les prix ;
+- un poids négatif est une vente à découvert (perpétuel simulé) : gain si le prix baisse, perte non plafonnée
+  s'il monte, plus un coût de financement horaire ; exposition brute cible limitée à 100 % (pas de levier) ;
 - l'ordre minimum de 5 EUR est ignoré (recherche).
 
 Marche avant : on choisit les paramètres sur 12 mois (petite grille), on les applique aux 3 mois suivants,
@@ -22,22 +24,31 @@ H_AN = 24 * 365
 TRAIN_H = 365 * 24
 TEST_H = 91 * 24
 SHARPE_SUSPECT = 3.0
+# Coût de financement payé par les positions short : 0,01 % toutes les 8 h (environ 11 % par an).
+# HYPOTHÈSE prudente et moyenne : en réalité le financement varie d'une heure à l'autre, et quand il est
+# positif ce sont les longs qui paient les shorts. Ici le short paie toujours. Les longs (spot) ne paient rien.
+FUNDING_SHORT_8H = 0.0001
 
 
-def simuler(ouv, clo, poids, cout=COUT):
-    """Retourne (df, poids_reels). df : rend (rendement net close à close), turnover, frais, expo, par heure,
-    en fraction du capital courant. poids_reels[t] : poids effectivement détenus à la clôture t."""
+def simuler(ouv, clo, poids, cout=COUT, financement_8h=FUNDING_SHORT_8H):
+    """Retourne (df, poids_reels). df : rend (rendement net close à close), turnover, frais, financement,
+    expo (brute) et short, par heure, en fraction du capital courant.
+    poids_reels[t] : poids effectivement détenus à la clôture t (négatif = short).
+    Comptabilité du short : vendre X à découvert ajoute X au cash et crée une position de valeur -X,
+    qui devient -X * (prix / prix d'entrée). Le capital est toujours cash + somme des positions."""
     C = clo.to_numpy(float)
     O = ouv.reindex(columns=clo.columns).to_numpy(float)
     W = poids.reindex(index=clo.index, columns=clo.columns).fillna(0.0).to_numpy(float)
     W = np.where(np.isnan(C), 0.0, W)                    # impossible de détenir un actif pas encore coté
+    W = W / np.maximum(np.abs(W).sum(axis=1, keepdims=True), 1.0)     # exposition brute cible <= 100 %
     T, N = C.shape
     nuit = np.nan_to_num(O[1:] / C[:-1], nan=1.0)        # clôture t-1 -> ouverture t
     jour = np.nan_to_num(C[1:] / O[1:], nan=1.0)         # ouverture t -> clôture t
     change = np.ones(T, bool)
     change[1:] = np.abs(W[1:] - W[:-1]).sum(axis=1) > 1e-9
     change[0] = W[0].any()
-    rend, tour, frais, expo = np.zeros(T), np.zeros(T), np.zeros(T), np.zeros(T)
+    rend, tour, frais, expo, fin, short = (np.zeros(T) for _ in range(6))
+    f_h = financement_8h / 8.0
     reels = np.zeros((T, N))
     pos, cash, avant = np.zeros(N), 1.0, 1.0
     for t in range(1, T):
@@ -51,10 +62,18 @@ def simuler(ouv, clo, poids, cout=COUT):
             tour[t], frais[t] = np.abs(cible - pos).sum() / avant, c / avant
             cash, pos = total - c - cible.sum(), cible
         pos = pos * jour[t - 1]
+        a_decouvert = -np.minimum(pos, 0.0).sum()
+        if a_decouvert > 0:                              # financement de l'heure, sur la valeur du short
+            cash -= f_h * a_decouvert
+            fin[t] = f_h * a_decouvert / avant
         total = cash + pos.sum()
-        rend[t], expo[t], reels[t] = total / avant - 1, pos.sum() / total, pos / total
+        if total <= 1e-12:                               # short emporté par une hausse : capital perdu, fin
+            rend[t] = -1.0
+            break
+        rend[t], expo[t], short[t], reels[t] = total / avant - 1, np.abs(pos).sum() / total, a_decouvert / total, pos / total
         avant = total
-    return pd.DataFrame({"rend": rend, "turnover": tour, "frais": frais, "expo": expo}, index=clo.index), reels
+    return pd.DataFrame({"rend": rend, "turnover": tour, "frais": frais, "financement": fin,
+                         "expo": expo, "short": short}, index=clo.index), reels
 
 
 def sharpe(r):
@@ -83,7 +102,9 @@ def metriques(df):
         "calmar": round(cagr / dd, 3) if dd > 0 else 0.0,
         "turnover_annuel": round(float(df["turnover"].sum() / ans), 2),      # 1.0 = 100 % du capital échangé par an
         "frais_eur_pour_100": round(float((df["frais"].to_numpy() * capital_avant).sum() * 100), 2),
+        "financement_eur_pour_100": round(float((df["financement"].to_numpy() * capital_avant).sum() * 100), 2),
         "temps_investi_pct": round(float((df["expo"] > 0.01).mean() * 100), 1),
+        "temps_short_pct": round(float((df["short"] > 0.01).mean() * 100), 1),
         "duree_ans": round(ans, 2),
         "sharpe_suspect": bool(sh > SHARPE_SUSPECT),
     }
@@ -103,16 +124,17 @@ def combinaisons(grille):
     return [dict(zip(cles, v)) for v in itertools.product(*(grille[k] for k in cles))]
 
 
-def marche_avant(ouv, clo, strat, train=TRAIN_H, test=TEST_H, debut=CHAUFFE_J * 24, cout=COUT):
+def marche_avant(ouv, clo, strat, train=TRAIN_H, test=TEST_H, debut=CHAUFFE_J * 24, cout=COUT,
+                 financement_8h=FUNDING_SHORT_8H):
     """Validation marche avant d'une stratégie. Critère de choix des paramètres : meilleur Sharpe net
     sur la fenêtre d'apprentissage (en cas d'égalité, la première combinaison de la grille)."""
     combos = combinaisons(strat["grille"])
-    sims = [simuler(ouv, clo, strat["fonction"](clo, **p), cout) for p in combos]
+    sims = [simuler(ouv, clo, strat["fonction"](clo, **p), cout, financement_8h) for p in combos]
 
     def meilleur(a, b):
         return int(np.argmax([sharpe(df["rend"].to_numpy()[a:b]) for df, _ in sims]))
 
-    morceaux, segments, precedent = [], [], None
+    morceaux, detenus, segments, precedent = [], [], [], None
     for a, b, c in fenetres(len(clo), debut, train, test):
         i = meilleur(a, b)                               # n'utilise QUE [a, b)
         m = sims[i][0].iloc[b:c].copy()
@@ -124,12 +146,15 @@ def marche_avant(ouv, clo, strat, train=TRAIN_H, test=TEST_H, debut=CHAUFFE_J * 
             m.iloc[0, m.columns.get_loc("turnover")] += ecart
         precedent = i
         morceaux.append(m)
+        detenus.append(sims[i][1][b:c])
         segments.append({"apprentissage": [_iso(clo.index[a]), _iso(clo.index[b - 1])],
                          "test": [_iso(clo.index[b]), _iso(clo.index[c - 1])], "parametres": combos[i]})
     if not morceaux:
         raise ValueError("historique trop court pour une validation marche avant")
     n = len(clo)
-    return {"oos": pd.concat(morceaux), "segments": segments, "nb_combos": len(combos),
+    oos = pd.concat(morceaux)
+    return {"oos": oos, "segments": segments, "nb_combos": len(combos),
+            "poids_oos": pd.DataFrame(np.vstack(detenus), index=oos.index, columns=clo.columns),
             "parametres_live": combos[meilleur(max(0, n - train), n)]}     # choisis sur les 12 derniers mois
 
 
@@ -142,6 +167,20 @@ def btc_hold(ouv, clo, index_oos, cout=COUT):
     df.iloc[0, df.columns.get_loc("turnover")] = 1.0
     df["expo"] = 1.0
     return df
+
+
+def pires_hausses_short(clo, poids_oos):
+    """Pire hausse de prix subie pendant qu'un actif était vendu à découvert, hors échantillon :
+    sur une heure, et sur 24 h de short ininterrompu. Aucun stop n'est simulé : c'est le risque brut."""
+    en_short = (poids_oos < 0).shift(1, fill_value=False)        # short détenu pendant l'heure t
+    if not en_short.to_numpy().any():
+        return {"pire_hausse_horaire_short_pct": None, "pire_hausse_journaliere_short_pct": None}
+    c = clo.reindex(columns=poids_oos.columns)
+    h = c.pct_change(fill_method=None).reindex(poids_oos.index)[en_short]
+    j = c.pct_change(24, fill_method=None).reindex(poids_oos.index)[en_short.rolling(24).min() == 1]
+    arrondi = lambda x: None if pd.isna(x) else round(float(x) * 100, 2)
+    return {"pire_hausse_horaire_short_pct": arrondi(h.max().max()),
+            "pire_hausse_journaliere_short_pct": arrondi(j.max().max())}
 
 
 def proba_sharpe_superieur(r, r_ref, blocs_h=168, tirages=500, graine=0):

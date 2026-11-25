@@ -3,7 +3,7 @@
 Tourne en continu (~5 h 45 par session GitHub Actions, puis la session suivante reprend l'état) :
 - toutes les 5 s : prix en direct, stops suiveurs, coupe-circuit
 - toutes les 30 s : lecture des commandes envoyées depuis le téléphone (control.json)
-- à chaque nouvelle heure : univers, classement momentum, décisions d'achat/vente
+- chaque jour juste après minuit UTC : bougies journalières, filtre BTC, sélection de la semaine, achats/ventes
 - toutes les 2 min (et après chaque trade) : publication de l'état pour le tableau de bord
 """
 import json
@@ -49,6 +49,8 @@ class Bot:
         self.marche_ok = None
         self.prix = {}
         self.heure_traitee = None
+        self.cible = []
+        self.prochain_rebal = None
         self.dirty = True
 
     # ---------- utilitaires ----------
@@ -64,26 +66,23 @@ class Bot:
     # ---------- marché ----------
     def maj_univers(self):
         paires = kraken.paires_eur()
-        tick = kraken.tickers(paires.keys())
-        tri = sorted((k for k in tick if k in paires), key=lambda k: tick[k]["volume_eur"], reverse=True)
         self.cles = {}
-        for k in tri:
-            s = paires[k]["symbole"]
-            if s not in self.cles:
-                self.cles[s] = k
-        self.univers = [paires[k]["symbole"] for k in tri][: config.NB_PAIRES_UNIVERS]
-        if "BTC" not in self.univers:
-            self.univers.append("BTC")
-        self.prix.update({paires[k]["symbole"]: tick[k]["prix"] for k in tick if k in paires})
+        for k, p in paires.items():
+            if p["symbole"] in config.UNIVERS and p["symbole"] not in self.cles:
+                self.cles[p["symbole"]] = k
+        self.univers = [s for s in config.UNIVERS if s in self.cles]
+        manquants = set(config.UNIVERS) - set(self.univers)
+        if manquants:
+            self.log("paires EUR introuvables sur Kraken : " + ", ".join(sorted(manquants)))
 
     def charger_bougies(self):
         series = {}
         for s in self.univers:
             try:
-                series[s] = kraken.bougies_horaires(self.cles[s])
+                series[s] = kraken.bougies(self.cles[s], 1440)
             except Exception as e:
                 self.log(f"bougies {s} indisponibles : {e}")
-            self.tick_rapide()  # on continue de surveiller les stops pendant le chargement
+            self.tick_rapide()  # on continue de surveiller pendant le chargement
         return series
 
     def maj_prix(self):
@@ -110,7 +109,7 @@ class Bot:
             self.btc_depart = self.prix["BTC"]
         avant = len(self.pf.trades)
         for s in self.pf.maj_prix_et_stops(self.prix, maintenant()):
-            self.log(f"VENTE {s} : stop suiveur déclenché")
+            self.log(f"VENTE {s} : stop déclenché")
         v = self.valeur()
         self.pf.plus_haut = max(self.pf.plus_haut, v)
         if self.statut == "actif" and v <= self.pf.plus_haut * (1 - config.COUPE_CIRCUIT_DD):
@@ -120,28 +119,40 @@ class Bot:
         if len(self.pf.trades) != avant:
             self.dirty = True
 
-    def decision_horaire(self, series):
-        clotures = {s: [b[2] for b in bs] for s, bs in series.items()}
+    def decision_journaliere(self, series):
+        clotures = {sym: [b[2] for b in bs] for sym, bs in series.items()}
         if "BTC" not in clotures:
             self.log("pas de données BTC, décision reportée")
             return
         self.marche_ok = strategy.marche_favorable(clotures["BTC"])
         self.rang = strategy.classement(clotures)
+        # sélection en vigueur = celle du dernier jour de rebalancement (identique à la recherche)
+        ts_btc = [b[0] for b in series["BTC"]]
+        dernier_rebal = max((t for t in ts_btc if strategy.jour_de_rebalancement(t)), default=None)
+        if dernier_rebal is None:
+            return
+        tronque = {sym: [b[2] for b in bs if b[0] <= dernier_rebal] for sym, bs in series.items()}
+        self.cible = strategy.selection(strategy.classement(tronque))
+        self.prochain_rebal = kraken_date(dernier_rebal + (config.REBAL_J + 1) * 86400)
         if self.statut != "actif":
             return
-        vendre, acheter = strategy.decisions(list(self.pf.positions), self.rang, self.marche_ok)
+        vendre, acheter = strategy.decisions(list(self.pf.positions), self.cible, self.marche_ok)
         t = maintenant()
-        for s, raison in vendre.items():
-            if s in self.prix:
-                self.pf.vendre(s, self.prix[s], t, raison)
-                self.log(f"VENTE {s} : {raison}")
-        acheter = [(s, r) for s, r in acheter if s in self.prix]
-        for n, (s, raison) in enumerate(acheter):
-            if self.pf.acheter(s, self.prix[s], self.pf.cash / (len(acheter) - n), t, raison):
-                self.log(f"ACHAT {s} : {raison}")
+        for sym, raison in vendre.items():
+            if sym in self.prix:
+                self.pf.vendre(sym, self.prix[sym], t, raison)
+                self.log(f"VENTE {sym} : {raison}")
+        acheter = [(sym, r) for sym, r in acheter if sym in self.prix]
+        places = config.NB_POSITIONS - len(self.pf.positions)
+        for n, (sym, raison) in enumerate(acheter):
+            if self.pf.acheter(sym, self.prix[sym], self.pf.cash / max(1, places - n), t, raison):
+                self.log(f"ACHAT {sym} : {raison}")
         if not vendre and not acheter:
-            etat_marche = "favorable" if self.marche_ok else "défavorable (BTC sous sa moyenne 200 h)"
-            self.log(f"Analyse horaire : rien à faire. Marché {etat_marche}.")
+            if self.marche_ok:
+                det = ", ".join(self.pf.positions) or "aucune"
+                self.log(f"Analyse du jour : rien à changer (sélection de la semaine : {', '.join(self.cible) or 'aucune en hausse'} ; positions : {det}).")
+            else:
+                self.log("Analyse du jour : BTC sous sa moyenne 100 jours, le bot reste en cash.")
         self.dirty = True
 
     def lire_controle(self):
@@ -203,10 +214,13 @@ class Bot:
             "dernier_controle_id": self.dernier_controle,
             "paires": {s: kraken_ws(self.cles.get(s, ""), s) for s in set(self.univers) | set(self.pf.positions)},
             "prix": {s: self.prix[s] for s in set(self.univers) | set(self.pf.positions) if s in self.prix},
-            "classement": [{**x, "perf": round(x["perf"] * 100, 2)} for x in self.rang[:15]],
+            "classement": [{**x, "perf": round(x["perf"] * 100, 2), "selection": x["symbole"] in self.cible} for x in self.rang[:15]],
+            "selection_semaine": self.cible, "prochain_rebalancement": self.prochain_rebal,
+            "strategie": {"nom": "Rotation momentum hebdomadaire",
+                          "resume": f"Les {config.NB_POSITIONS} cryptos les plus fortes sur {config.LOOKBACK_J} jours parmi {len(config.UNIVERS)}, revues tous les {config.REBAL_J} jours, cash si le BTC passe sous sa moyenne {config.SMA_BTC_J} jours."},
             "parametres": {"positions": config.NB_POSITIONS, "stop": config.STOP_SUIVEUR,
                            "coupe_circuit": config.COUPE_CIRCUIT_DD, "frais": config.FRAIS,
-                           "lookback_h": config.LOOKBACK_H},
+                           "lookback_j": config.LOOKBACK_J},
             "courbe": self.courbe, "journal": self.journal,
         }
         for s, p in etat["positions"].items():
@@ -255,16 +269,15 @@ class Bot:
         dernier_controle = dernier_publi = 0
         while time.time() - debut < DUREE_MAX_S:
             t0 = time.time()
-            heure = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
-            if heure != self.heure_traitee and datetime.now(timezone.utc).minute >= 1:
+            jour = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if jour != self.heure_traitee and datetime.now(timezone.utc).hour * 60 + datetime.now(timezone.utc).minute >= 2:
                 try:
                     if self.heure_traitee is not None:
-                        self.maj_univers()
                         series = self.charger_bougies()
-                    self.decision_horaire(series)
-                    self.heure_traitee = heure
+                    self.decision_journaliere(series)
+                    self.heure_traitee = jour
                 except Exception as e:
-                    self.log(f"analyse horaire échouée, nouvel essai dans 1 min : {e}")
+                    self.log(f"analyse du jour échouée, nouvel essai dans 1 min : {e}")
                     time.sleep(55)
             self.tick_rapide()
             if t0 - dernier_controle >= CONTROLE_S:
@@ -295,6 +308,10 @@ class Bot:
             self.log("Backtest du jour : " + r["verdict"])
         except Exception as e:
             self.log(f"backtest impossible : {e}")
+
+
+def kraken_date(ts):
+    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
 
 
 def kraken_ws(cle, sym):

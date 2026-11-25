@@ -1,5 +1,5 @@
 """Stratégies candidates. Chacune est une fonction pure : clo (clôtures horaires, une colonne par actif)
--> poids cibles par heure (0 = cash). La ligne t n'utilise que les clôtures jusqu'à t incluse :
+-> poids cibles par heure (0 = cash, négatif = vente à découvert). La ligne t n'utilise que les clôtures jusqu'à t incluse :
 c'est vérifié par les tests (modifier le futur ne change pas les poids passés).
 
 Les signaux sont volontairement lents (bougies journalières) : à 0,5 % par ordre, le trading rapide est ruiné
@@ -38,6 +38,19 @@ def tendance_sma(clo, sma_j=100):
     """BTC et ETH (50 % chacun) : détenu si la clôture du jour est au-dessus de sa moyenne sma_j jours."""
     j = _jours(clo[_actifs(clo, ["BTC", "ETH"])])
     return _horaire((j > j.rolling(sma_j).mean()) * (1.0 / j.shape[1]), clo)
+
+
+def tendance_long_short(clo, sma_j=100):
+    """BTC et ETH (50 % chacun) : long au-dessus de la moyenne sma_j jours, short en dessous. Pas de stop."""
+    j = _jours(clo[_actifs(clo, ["BTC", "ETH"])])
+    m = j.rolling(sma_j).mean()
+    return _horaire(((j > m) * 1.0 - (j < m) * 1.0) / j.shape[1], clo)
+
+
+def tendance_short_seul(clo, sma_j=100):
+    """BTC et ETH : cash au-dessus de la moyenne sma_j jours, short en dessous (isole l'apport du short)."""
+    j = _jours(clo[_actifs(clo, ["BTC", "ETH"])])
+    return _horaire((j < j.rolling(sma_j).mean()) * (-1.0 / j.shape[1]), clo)
 
 
 def donchian(clo, entree_j=40):
@@ -113,6 +126,12 @@ def rotation_horaire_live(clo, lookback_h=None, sma_actif_h=None, sma_btc_h=None
 STRATEGIES = [
     {"nom": "tendance_sma", "fonction": tendance_sma,
      "description": "Suivi de tendance BTC + ETH : détenu si le prix est au-dessus de sa moyenne mobile journalière, sinon cash.",
+     "grille": {"sma_j": [50, 100, 200]}},
+    {"nom": "tendance_long_short", "fonction": tendance_long_short,
+     "description": "Tendance BTC + ETH dans les deux sens : long au-dessus de la moyenne mobile, vente à découvert en dessous.",
+     "grille": {"sma_j": [50, 100, 200]}},
+    {"nom": "tendance_short_seul", "fonction": tendance_short_seul,
+     "description": "Vente à découvert seule sur BTC + ETH : short sous la moyenne mobile, cash au-dessus.",
      "grille": {"sma_j": [50, 100, 200]}},
     {"nom": "donchian", "fonction": donchian,
      "description": "Cassure de canal BTC + ETH : achat sur un plus haut de N jours, vente sur un plus bas de N/2 jours.",

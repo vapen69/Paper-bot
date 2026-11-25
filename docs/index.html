@@ -105,9 +105,9 @@ h1{font-size:17px;margin:0;font-weight:800;letter-spacing:.2px}
   </div>
 
   <div class="card"><h2>Derniers trades <span id="nbTrades"></span></h2><div id="trades"></div></div>
-  <div class="card"><h2>Ce que le bot voit <span id="marche"></span></h2><div id="rang"></div></div>
+  <div class="card"><h2>Ce que le bot voit <span id="marche"></span></h2><p class="note" id="strat" style="margin:0 0 8px"></p><div id="rang"></div></div>
   <div class="card"><h2>Tests de stratégie</h2>
-    <div class="tabs"><button class="on" data-t="bt">Backtest 30 j</button><button data-t="rs">Recherche long terme</button></div>
+    <div class="tabs"><button class="on" data-t="rs">Recherche 5 ans</button><button data-t="bt">Contrôle du code 2 ans</button></div>
     <div id="tests"></div>
   </div>
   <div class="card"><h2>Journal du bot</h2><div class="log" id="journal"></div></div>
@@ -129,7 +129,7 @@ const pct = v => (v >= 0 ? "+" : "") + v.toLocaleString("fr-FR", {minimumFractio
 const prixFmt = p => p >= 100 ? eur(p, 2) : p >= 1 ? eur(p, 4) : eur(p, 6);
 const heure = t => new Date(t).toLocaleString("fr-FR", {day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"});
 
-let S = null, live = {}, tab = "bt", BT = null, RS = null, ws = null, lastTick = 0;
+let S = null, live = {}, tab = "rs", BT = null, RS = null, ws = null, lastTick = 0;
 
 async function getJson(name) {
   try { const r = await fetch(RAW + name + "?t=" + Date.now(), {cache: "no-store"}); if (r.ok) return await r.json(); } catch (e) {}
@@ -165,8 +165,8 @@ function renderLive() {
   $("cash").textContent = "cash " + eur(S.cash);
   const pos = Object.entries(S.positions);
   $("positions").innerHTML = pos.length ? pos.map(([s, p]) => {
-    const px = prix(s) ?? p.dernier_prix, val = p.qte * px, pnl = val - p.cout, stop = Math.max(p.plus_haut, px) * (1 - S.parametres.stop);
-    return `<div class="pos"><div><div class="sym">${esc(s)}</div><div class="sub">Achat ${esc(prixFmt(p.prix_entree))} · ${esc(heure(p.depuis))}${p.rang ? " · rang " + esc(p.rang) : ""}</div><div class="sub">Stop suiveur ${esc(prixFmt(stop))}</div></div>
+    const px = prix(s) ?? p.dernier_prix, val = p.qte * px, pnl = val - p.cout;
+    return `<div class="pos"><div><div class="sym">${esc(s)}</div><div class="sub">Achat ${esc(prixFmt(p.prix_entree))} · ${esc(heure(p.depuis))}${p.rang ? " · rang " + esc(p.rang) + " sur 7 j" : ""}</div></div>
     <div style="text-align:right"><div class="num" data-px="${esc(s)}">${esc(prixFmt(px))}</div><div class="num ${pnl >= 0 ? "up" : "down"}">${pnl >= 0 ? "+" : ""}${esc(eur(pnl))} (${esc(pct(pnl / p.cout * 100))})</div><div class="sub num">${esc(eur(val))}</div></div></div>`;
   }).join("") : `<div class="empty">Aucune position : le bot est en cash et attend un signal.</div>`;
 }
@@ -177,13 +177,14 @@ function renderState() {
   $("statut").className = "pill " + st;
   $("periode").textContent = "depuis le " + new Date(S.demarre_le).toLocaleDateString("fr-FR");
   $("marche").textContent = S.marche_ok == null ? "" : S.marche_ok ? "marché favorable" : "marché défavorable : cash";
+  $("strat").textContent = (S.strategie?.resume || "") + (S.prochain_rebalancement ? " Prochaine révision de la sélection : " + new Date(S.prochain_rebalancement).toLocaleDateString("fr-FR") + "." : "");
   const tr = [...S.trades].reverse().slice(0, 25);
   $("nbTrades").textContent = S.trades.length + " au total";
   $("trades").innerHTML = tr.length ? tr.map(t => `<div class="row"><div><span class="tag ${t.sens}">${t.sens === "achat" ? "ACHAT" : "VENTE"}</span><b>${esc(t.symbole)}</b><div class="r">${esc(t.raison)}</div></div>
     <div style="text-align:right" class="num"><div>${esc(eur(t.montant))}</div>${t.pnl != null ? `<div class="${t.pnl >= 0 ? "up" : "down"}">${t.pnl >= 0 ? "+" : ""}${esc(eur(t.pnl))}</div>` : ""}<div class="r">${esc(heure(t.t))}</div></div></div>`).join("") : `<div class="empty">Pas encore de trade.</div>`;
   const rg = S.classement || [];
   const mx = Math.max(1, ...rg.map(x => Math.abs(x.perf)));
-  $("rang").innerHTML = rg.length ? rg.slice(0, 10).map(x => `<div class="row"><div style="flex:1"><b>${esc(x.rang)}. ${esc(x.symbole)}</b> <span class="r">${x.eligible ? "éligible" : "non éligible"}</span><div class="bar"><i style="width:${Math.abs(x.perf) / mx * 100}%;background:${x.perf >= 0 ? "var(--up)" : "var(--down)"}"></i></div></div><div class="num ${x.perf >= 0 ? "up" : "down"}">${esc(pct(x.perf))} <span class="r">24 h</span></div></div>`).join("") : `<div class="empty">Classement disponible après la première analyse horaire.</div>`;
+  $("rang").innerHTML = rg.length ? rg.slice(0, 10).map(x => `<div class="row"><div style="flex:1"><b>${esc(x.rang)}. ${esc(x.symbole)}</b> <span class="r">${x.selection ? "sélection de la semaine" : x.eligible ? "en hausse" : "en baisse"}</span><div class="bar"><i style="width:${Math.abs(x.perf) / mx * 100}%;background:${x.perf >= 0 ? "var(--up)" : "var(--down)"}"></i></div></div><div class="num ${x.perf >= 0 ? "up" : "down"}">${esc(pct(x.perf))} <span class="r">7 j</span></div></div>`).join("") : `<div class="empty">Classement disponible après la première analyse horaire.</div>`;
   $("journal").innerHTML = [...(S.journal || [])].reverse().map(l => `<div><time>${esc(heure(l.t))}</time>${esc(l.msg)}</div>`).join("");
   $("maj").textContent = "Dernière synchro du bot : " + new Date(S.maj).toLocaleString("fr-FR") + ". Les prix et la valeur bougent en direct.";
   drawChart(); renderLive(); subscribe();
@@ -211,14 +212,14 @@ function renderTests() {
   if (tab === "bt") {
     if (!BT) { $("tests").innerHTML = `<div class="empty">Le backtest se calcule au démarrage du bot.</div>`; return; }
     const a = BT.avec_frais;
-    $("tests").innerHTML = `<p class="note" style="margin-top:0">Stratégie en direct, rejouée du ${esc(heure(a.debut))} au ${esc(heure(a.fin))}, frais et slippage inclus.</p>`
+    $("tests").innerHTML = `<p class="note" style="margin-top:0">Code du bot rejoué du ${esc(new Date(a.debut).toLocaleDateString("fr-FR"))} au ${esc(new Date(a.fin).toLocaleDateString("fr-FR"))}, frais et slippage inclus.</p>`
       + metrics({r: a.rendement_pct, b: a.btc_rendement_pct, dd: a.drawdown_max_pct, l4: "Trades", v4: a.nb_trades})
       + `<p class="verdict">${esc(BT.verdict)}</p><p class="note">Sans frais, elle aurait fait ${esc(pct(BT.sans_frais.rendement_pct))}. Frais payés : ${esc(eur(a.frais_payes))}. ${esc(BT.avertissement)}</p>`;
   } else {
     if (!RS) { $("tests").innerHTML = `<div class="empty">Recherche long terme pas encore lancée (plusieurs années de données, plusieurs stratégies, validation sur des périodes jamais vues).</div>`; return; }
     const rows = (RS.strategies || []).map(s => { const o = s.oos || {}; const r = o.rendement_total_pct ?? o.total_return_pct ?? 0; const dd = o.drawdown_max_pct ?? o.max_drawdown_pct ?? 0; const sh = o.sharpe ?? 0;
       return `<div class="row"><div><b>${esc(s.nom)}</b><div class="r">${esc(s.description || "")}</div></div><div class="num" style="text-align:right"><div class="${r >= 0 ? "up" : "down"}">${esc(pct(r))}</div><div class="r">Sharpe ${esc(Number(sh).toFixed(2))} · DD ${esc(pct(-Math.abs(dd)))}</div></div></div>`; }).join("");
-    $("tests").innerHTML = `<p class="note" style="margin-top:0">${esc(RS.periode?.debut ?? "")} → ${esc(RS.periode?.fin ?? "")}, résultats hors échantillon uniquement.</p>${rows}<p class="verdict">${esc(RS.verdict || "")}</p>`;
+    $("tests").innerHTML = `<p class="note" style="margin-top:0">Du ${esc((RS.periode?.oos_debut ?? "").slice(0, 10))} au ${esc((RS.periode?.oos_fin ?? "").slice(0, 10))}, uniquement sur des périodes jamais vues par la stratégie, frais inclus. Choix : <b>${esc(RS.choix?.nom ?? "")}</b>.</p>${rows}<div class="row"><div><b>Garder du BTC</b><div class="r">référence</div></div><div class="num" style="text-align:right"><div>${esc(pct(RS.btc_hold?.oos?.rendement_total_pct ?? 0))}</div><div class="r">Sharpe ${esc(Number(RS.btc_hold?.oos?.sharpe ?? 0).toFixed(2))} · DD ${esc(pct(-Math.abs(RS.btc_hold?.oos?.drawdown_max_pct ?? 0)))}</div></div></div><p class="verdict">${esc(RS.verdict || "")}</p>`;
   }
 }
 document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => { tab = b.dataset.t; renderTests(); }));

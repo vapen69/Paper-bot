@@ -7,6 +7,7 @@
 RÈGLE DE SÉLECTION, écrite avant de voir le moindre résultat (fonction choisir) :
 1. sont éligibles les stratégies dont le Sharpe hors échantillon, frais déduits, dépasse celui du BTC conservé,
    avec un rendement annuel positif et un Sharpe non suspect (<= 3) ;
+   (les stratégies avec vente à découvert passent par la même règle, sans traitement de faveur) ;
 2. parmi elles, on retient le meilleur Calmar (rendement annuel / pire baisse) ;
 3. si aucune n'est éligible, on le dit, et on recommande par défaut la plus robuste : la plus faible baisse
    maximale parmi celles qui gagnent de l'argent en étant investies au moins 10 % du temps ; à défaut, la
@@ -25,6 +26,8 @@ from .strategies import STRATEGIES
 RACINE = Path(__file__).resolve().parent.parent
 DEFAUT = "tendance_sma"
 PROBA_SOLIDE = 0.90
+
+COMPARAISON_SHORT = ("tendance_sma", "tendance_long_short", "tendance_short_seul")
 
 REGLE = ("Éligible si Sharpe hors échantillon net de frais > Sharpe du BTC conservé, rendement annuel > 0 et "
          "Sharpe <= 3. Parmi les éligibles : meilleur Calmar. Sinon : plus faible baisse maximale parmi les "
@@ -60,6 +63,7 @@ def analyser(ouv, clo, infos, journal=print):
             btc_df = wf.btc_hold(ouv, clo, oos.index)
         m = wf.metriques(oos)
         m["proba_sharpe_sup_btc"] = wf.proba_sharpe_superieur(oos["rend"], btc_df["rend"])
+        m.update(wf.pires_hausses_short(clo, r["poids_oos"]))
         freq = Counter(json.dumps(s["parametres"], sort_keys=True) for s in r["segments"])
         resultats.append({
             "nom": strat["nom"], "description": strat["description"],
@@ -103,12 +107,26 @@ def analyser(ouv, clo, infos, journal=print):
                      f"({elu['oos']['cagr_pct']:+.1f} % par an) : rien ici ne justifie de trader plutôt que de ne rien faire.")
         verdict = (f"{prefixe}Aucune des {len(resultats)} stratégies testées ne bat le simple fait de garder du BTC à risque "
                    f"égal, hors échantillon et frais déduits (Sharpe du BTC : {btc['sharpe']:.2f}). {suite}")
+    par_nom = {s["nom"]: s["oos"] for s in resultats}
+    lg, ls, sh = (par_nom[n] for n in COMPARAISON_SHORT)
+    if ls["sharpe"] > lg["sharpe"] and sh["cagr_pct"] > 0:
+        apport = ("Sur cette période, le short a aidé : la version long/short a un meilleur Sharpe que le long seul "
+                  f"({ls['sharpe']:.2f} contre {lg['sharpe']:.2f}) et le short seul est gagnant ({sh['cagr_pct']:+.1f} % par an).")
+    elif sh["cagr_pct"] > 0:
+        apport = (f"Le short seul est gagnant ({sh['cagr_pct']:+.1f} % par an) mais n'améliore pas le long seul à risque égal "
+                  f"(Sharpe {ls['sharpe']:.2f} en long/short contre {lg['sharpe']:.2f} en long seul).")
+    else:
+        apport = (f"Sur cette période, le short n'a rien apporté : seul, il fait {sh['cagr_pct']:+.1f} % par an après frais et "
+                  f"financement, et la version long/short a un Sharpe de {ls['sharpe']:.2f} contre {lg['sharpe']:.2f} en long seul.")
     avertissements = [
         "Biais de survie : l'univers est composé d'actifs encore liquides aujourd'hui, ce qui avantage les rotations.",
         "Les performances passées, même hors échantillon, ne garantissent rien pour la suite.",
         f"{nb_total} combinaisons de paramètres essayées au total : en gardant la meilleure par pure chance, on "
         f"s'attendrait déjà à un Sharpe d'environ {seuil:.2f}.",
         "Ordre minimum de 5 EUR ignoré ; exécution supposée à l'ouverture de l'heure suivante avec 0,10 % de slippage.",
+        f"Ventes à découvert : financement supposé constant à {wf.FUNDING_SHORT_8H * 100:.2f} % par 8 h (hypothèse, il varie "
+        "en réalité), aucun stop, pas de liquidation simulée. Le bot actuel (achat simple au comptant) ne sait pas vendre "
+        "à découvert : il faudrait des contrats perpétuels.",
     ]
     if infos["devise"] == "EUR" and infos["source"] == "coinbase":
         avertissements.append("Paires USD converties en EUR avec le taux implicite BTC-USD / BTC-EUR.")
@@ -121,7 +139,8 @@ def analyser(ouv, clo, infos, journal=print):
         "periode": {"donnees_debut": wf._iso(clo.index[0]), "donnees_fin": wf._iso(clo.index[-1]),
                     "oos_debut": oos_debut, "oos_fin": oos_fin, "oos_ans": btc["duree_ans"],
                     "apprentissage_jours": wf.TRAIN_H // 24, "test_jours": wf.TEST_H // 24},
-        "couts": {"frais": config.FRAIS, "slippage": config.SLIPPAGE},
+        "couts": {"frais": config.FRAIS, "slippage": config.SLIPPAGE, "financement_short_8h": wf.FUNDING_SHORT_8H},
+        "apport_short": {"strategies": list(COMPARAISON_SHORT), "conclusion": apport},
         "regle_selection": REGLE,
         "nb_combos_total": nb_total, "sharpe_seuil_hasard": seuil,
         "strategies": resultats,
@@ -167,6 +186,19 @@ def en_markdown(r):
           "Lecture : Sharpe et Sortino = rendement par unité de risque (plus haut = mieux). Calmar = rendement annuel "
           "divisé par la pire baisse. Proba Sharpe > BTC : autour de 50 % = aucune différence démontrée, au-dessus de "
           "90 % = avantage crédible. Stabilité : part des trimestres où les mêmes paramètres ont été choisis.",
+          "", "## Apport du short", "",
+          f"Même signal (moyenne mobile sur BTC + ETH), trois usages. Financement du short : "
+          f"{r['couts']['financement_short_8h'] * 100:.2f} % par 8 h (hypothèse), aucun stop.", "",
+          "| Stratégie | Par an | Pire baisse | Sharpe | Calmar | Temps en short | Financement (EUR pour 100) "
+          "| Pire hausse subie en short (1 h) | (24 h) |",
+          "|---|---|---|---|---|---|---|---|---|"]
+    pct = lambda x: "-" if x is None else f"{x:+.1f} %"
+    for nom in r["apport_short"]["strategies"]:
+        m = par_nom[nom]["oos"]
+        L.append(f"| {nom} | {m['cagr_pct']:+.1f} % | {m['drawdown_max_pct']:.1f} % | {m['sharpe']:.2f} | {m['calmar']:.2f} | "
+                 f"{m['temps_short_pct']:.0f} % | {m['financement_eur_pour_100']:.2f} | "
+                 f"{pct(m['pire_hausse_horaire_short_pct'])} | {pct(m['pire_hausse_journaliere_short_pct'])} |")
+    L += ["", r["apport_short"]["conclusion"],
           "", "## Paramètres à utiliser en direct (choisis sur les 12 derniers mois)", ""]
     for s in r["strategies"]:
         L.append(f"- **{s['nom']}** : `{json.dumps(s['parametres_retenus'])}` ({s['nb_combos']} combinaison(s) testée(s)). "

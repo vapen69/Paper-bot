@@ -29,8 +29,9 @@ def test_strategie_sans_regard_vers_le_futur(strat, marche):
     rng = np.random.default_rng(1)
     for params in wf.combinaisons(strat["grille"])[:3]:
         base = strat["fonction"](clo, **params)
-        assert base.shape == clo.shape and (base.to_numpy() >= 0).all() and base.sum(axis=1).max() <= 1 + 1e-9
-        assert base.to_numpy().sum() > 0, "la stratégie ne prend jamais position : test sans valeur"
+        assert base.shape == clo.shape and base.abs().sum(axis=1).max() <= 1 + 1e-9      # exposition brute <= 100 %
+        assert (base.to_numpy() >= 0).all() or "short" in strat["nom"]
+        assert base.abs().to_numpy().sum() > 0, "la stratégie ne prend jamais position : test sans valeur"
         for k in (len(clo) // 2, len(clo) - 500):
             futur = clo.copy()
             futur.iloc[k + 1:] *= rng.uniform(0.3, 3.0, size=futur.iloc[k + 1:].shape)
@@ -99,6 +100,69 @@ def test_frais_proportionnels_au_changement_de_poids():
     assert df["frais"].sum() == pytest.approx(COUT * 0.8, rel=0.01)
 
 
+# ---------- vente à découvert ----------
+def _short(prix, w=-1.0, **k):
+    o, c = _plat(prix, prix)
+    return wf.simuler(o, c, pd.DataFrame({"BTC": [0.0] * 2 + [w] * (len(prix) - 2)}, index=c.index), **k)
+
+
+def test_short_a_prix_constant_ne_gagne_rien_et_paie_le_financement():
+    n, f = 50, 0.0001
+    df, reels = _short([100.0] * n, cout=COUT, financement_8h=f)
+    x = 1 / (1 + COUT)                                   # taille du short après frais d'entrée
+    heures = n - 3                                       # ouvert à l'heure 3, détenu jusqu'à la fin
+    assert (1 + df["rend"]).prod() == pytest.approx(x * (1 - heures * f / 8), rel=1e-9)
+    assert (df["financement"] > 0).sum() == heures and (df["turnover"] > 0).sum() == 1
+    assert reels[-1, 0] < -0.99 and wf.metriques(df)["temps_short_pct"] == pytest.approx(100 * heures / n)
+    sans, _ = _short([100.0] * n, cout=0.0, financement_8h=0.0)
+    assert (1 + sans["rend"]).prod() == pytest.approx(1.0)
+    # un long au comptant ne paie jamais de financement
+    lng, _ = _short([100.0] * n, w=1.0, cout=COUT, financement_8h=f)
+    assert lng["financement"].sum() == 0.0 and lng["short"].sum() == 0.0
+
+
+def test_short_gagne_si_baisse_et_perd_sans_plafond_si_hausse():
+    baisse, _ = _short([100.0] * 5 + [80.0] * 5, cout=0.0, financement_8h=0.0)
+    assert (1 + baisse["rend"]).prod() == pytest.approx(1.20)            # -20 % sur le prix = +20 % de capital
+    hausse, _ = _short([100.0] * 5 + [150.0] * 5, cout=0.0, financement_8h=0.0)
+    assert (1 + hausse["rend"]).prod() == pytest.approx(0.50)
+    ruine, _ = _short([100.0] * 5 + [250.0] * 5, cout=0.0, financement_8h=0.0)
+    assert (1 + ruine["rend"]).prod() == pytest.approx(0.0)             # prix x 2,5 : tout le capital y passe
+    assert wf.metriques(ruine)["drawdown_max_pct"] == 100.0
+    demi, _ = _short([100.0] * 5 + [150.0] * 5, w=-0.5, cout=0.0, financement_8h=0.0)
+    assert (1 + demi["rend"]).prod() == pytest.approx(0.75)
+
+
+def test_exposition_brute_limitee_a_100_pct():
+    idx = pd.date_range("2024-01-01", periods=10, freq="h", tz="UTC")
+    c = pd.DataFrame({"BTC": 100.0, "ETH": 100.0}, index=idx)
+    w = pd.DataFrame({"BTC": 1.0, "ETH": -1.0}, index=idx)               # 200 % demandé
+    df, reels = wf.simuler(c, c, w, cout=0.0, financement_8h=0.0)
+    assert df["expo"].max() == pytest.approx(1.0) and reels[-1] == pytest.approx([0.5, -0.5])
+
+
+def test_pires_hausses_en_short():
+    idx = pd.date_range("2024-01-01", periods=60, freq="h", tz="UTC")
+    prix = np.full(60, 100.0)
+    prix[10] = 130.0                                     # +30 % pendant qu'on est long : ne compte pas
+    prix[11:] = 100.0
+    prix[40:] = 108.0                                    # +8 % pendant le short
+    c = pd.DataFrame({"BTC": prix}, index=idx)
+    w = pd.DataFrame({"BTC": [0.5] * 20 + [-0.5] * 40}, index=idx)
+    r = wf.pires_hausses_short(c, w)
+    assert r["pire_hausse_horaire_short_pct"] == pytest.approx(8.0) and r["pire_hausse_journaliere_short_pct"] == pytest.approx(8.0)
+    assert wf.pires_hausses_short(c, w.abs())["pire_hausse_horaire_short_pct"] is None
+
+
+def test_strategies_short_sens_du_signal(marche):
+    _, clo, _ = marche
+    par_nom = {s["nom"]: s["fonction"] for s in STRATEGIES}
+    lg, ls, sh = (par_nom[n](clo, sma_j=50)[["BTC", "ETH"]] for n in run_research.COMPARAISON_SHORT)
+    assert (sh <= 0).all().all() and (sh < 0).any().any() and set(np.unique(ls)) == {-0.5, 0.0, 0.5}
+    np.testing.assert_allclose(ls.to_numpy(), np.where(sh < 0, -0.5, lg.to_numpy()))   # long/short = long seul + short seul
+    assert not ((lg > 0) & (sh < 0)).any().any()
+
+
 # ---------- marche avant ----------
 def test_fenetres_sans_chevauchement():
     f = wf.fenetres(30000, debut=1000, train=8760, test=2184)
@@ -110,7 +174,7 @@ def test_fenetres_sans_chevauchement():
     assert f[-1][2] == 30000
 
 
-@pytest.mark.parametrize("strat", STRATEGIES[:5], ids=lambda s: s["nom"])
+@pytest.mark.parametrize("strat", STRATEGIES[:7], ids=lambda s: s["nom"])
 def test_marche_avant_n_utilise_pas_les_donnees_de_test(strat, marche):
     """On saccage tous les prix à partir du début du 2e test : le choix de paramètres des deux premiers
     segments et les rendements du premier test doivent rester identiques."""
@@ -164,7 +228,8 @@ def test_btc_hold_et_metriques(marche):
 def test_sharpe_suspect_et_seuil_du_hasard():
     idx = pd.date_range("2024-01-01", periods=5000, freq="h", tz="UTC")
     rng = np.random.default_rng(0)
-    df = pd.DataFrame({"rend": 0.0005 + rng.standard_normal(5000) * 0.001, "turnover": 0.0, "frais": 0.0, "expo": 1.0}, index=idx)
+    df = pd.DataFrame({"rend": 0.0005 + rng.standard_normal(5000) * 0.001, "turnover": 0.0, "frais": 0.0, "financement": 0.0,
+                       "expo": 1.0, "short": 0.0}, index=idx)
     assert wf.metriques(df)["sharpe_suspect"] is True
     assert wf.sharpe_du_hasard(30, 4) > wf.sharpe_du_hasard(5, 4) > 0
     assert wf.proba_sharpe_superieur(df["rend"], df["rend"] - 0.0005, tirages=50) > 0.95
@@ -245,9 +310,12 @@ def test_bout_en_bout_synthetique(tmp_path):
     for s in j["strategies"] + [j["btc_hold"]]:
         assert {"t", "v"} <= set(s["courbe"][0]) and len(s["courbe"]) == len(j["btc_hold"]["courbe"])
         assert {"rendement_total_pct", "cagr_pct", "drawdown_max_pct", "sharpe", "sortino", "calmar", "turnover_annuel",
-                "frais_eur_pour_100", "temps_investi_pct"} <= set(s["oos"])
+                "frais_eur_pour_100", "temps_investi_pct", "financement_eur_pour_100", "temps_short_pct"} <= set(s["oos"])
     assert j["nb_combos_total"] == sum(len(wf.combinaisons(s["grille"])) for s in STRATEGIES)
     md = (tmp_path / "research.md").read_text(encoding="utf-8")
-    assert "DONNÉES FICTIVES" in md and r["choix"]["nom"] in md
+    assert "DONNÉES FICTIVES" in md and r["choix"]["nom"] in md and "## Apport du short" in md
+    assert j["apport_short"]["conclusion"] in md and j["couts"]["financement_short_8h"] == wf.FUNDING_SHORT_8H
+    short = next(s for s in j["strategies"] if s["nom"] == "tendance_short_seul")["oos"]
+    assert short["temps_short_pct"] > 0 and short["financement_eur_pour_100"] > 0 and short["pire_hausse_horaire_short_pct"] > 0
     for texte in (md, json.dumps(j, ensure_ascii=False)):
         assert chr(8212) not in texte and chr(8211) not in texte
