@@ -107,3 +107,15 @@ def test_boucle_complete(tmp_path, monkeypatch):
     assert etat["statut"] == "pause"
     assert (tmp_path / "backtest.json").exists()
     assert any("PAUSE" in l["msg"] for l in etat["journal"])
+
+
+def test_kraken_paires_eur(monkeypatch):
+    """Analyse réelle de la réponse AssetPairs (avec une réponse Kraken simulée)."""
+    from bot import kraken
+    rep = {"XXBTZEUR": {"wsname": "XBT/EUR", "status": "online", "ordermin": "0.00005", "costmin": "0.5"},
+           "USDTEUR": {"wsname": "USDT/EUR", "status": "online"},
+           "XETHZUSD": {"wsname": "ETH/USD", "status": "online"},
+           "XDGEUR": {"wsname": "XDG/EUR", "status": "online"}}
+    monkeypatch.setattr(kraken, "_get", lambda e, p=None: rep)
+    out = kraken.paires_eur()
+    assert {v["symbole"] for v in out.values()} == {"BTC", "DOGE"}

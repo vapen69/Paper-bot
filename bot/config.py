@@ -12,6 +12,13 @@ CAPITAL_DEPART_EUR = 100.0
 # Univers : le même que celui de la recherche (cryptos liquides présentes depuis plusieurs années)
 UNIVERS = ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "AVAX", "LINK", "DOT", "LTC", "BCH", "ATOM"]
 
+# Stablecoins et monnaies fiat, jamais tradés
+EXCLUS = {
+    "USDT", "USDC", "DAI", "EURT", "EURC", "PYUSD", "USDG", "TUSD", "USDS", "USDE",
+    "FDUSD", "RLUSD", "EURR", "EUROP", "USDQ", "USD", "GBP", "CHF", "CAD", "AUD", "JPY",
+    "ZUSD", "ZGBP", "ZCAD", "ZJPY", "PAXG", "XAUT",
+}
+
 # Stratégie : rotation momentum hebdomadaire
 LOOKBACK_J = 7                  # performance mesurée sur 7 jours
 NB_POSITIONS = 2                # les 2 plus fortes, 50 % chacune
