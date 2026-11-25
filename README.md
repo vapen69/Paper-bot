@@ -6,7 +6,7 @@ Aucun argent réel n'est engagé.
 - **Tableau de bord** : https://vapen69.github.io/Paper-bot/
 - **Commandes** (pause, reprise, tout vendre, remise à 100 €) : onglet Actions > « Commande » > Run workflow
 - **Données** : prix publics Kraken (paires EUR), frais 0,40 % + slippage 0,10 % par ordre simulés
-- **Stratégie en direct** : rotation momentum hebdomadaire (les 2 cryptos les plus fortes sur 7 jours parmi 12, revues tous les 7 jours, cash si le BTC passe sous sa moyenne 100 jours), choisie par la recherche hors échantillon
+- **Stratégie en direct** : tendance long/short sur BTC et ETH (50 % chacun) : achat au-dessus de la moyenne 50 jours, vente à découvert en dessous, décision une fois par jour. Choisie par la recherche hors échantillon (règle fixée à l'avance).
 - **Recherche** : workflow « Recherche » (plusieurs années de données, validation hors échantillon)
 
 Fonctionnement : le workflow « Bot » tourne par sessions de 5 h 45 et se relance tout seul chaque heure.

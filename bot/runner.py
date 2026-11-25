@@ -1,9 +1,9 @@
 """Boucle principale du bot de paper trading.
 
 Tourne en continu (~5 h 45 par session GitHub Actions, puis la session suivante reprend l'état) :
-- toutes les 5 s : prix en direct, stops suiveurs, coupe-circuit
+- toutes les 5 s : prix en direct, financement des shorts, liquidation, coupe-circuit
 - toutes les 30 s : lecture des commandes envoyées depuis le téléphone (control.json)
-- chaque jour juste après minuit UTC : bougies journalières, filtre BTC, sélection de la semaine, achats/ventes
+- chaque jour juste après minuit UTC : bougies journalières, position de BTC et ETH face à leur moyenne 50 jours, long ou short
 - toutes les 2 min (et après chaque trade) : publication de l'état pour le tableau de bord
 """
 import json
@@ -49,8 +49,8 @@ class Bot:
         self.marche_ok = None
         self.prix = {}
         self.heure_traitee = None
-        self.cible = []
-        self.prochain_rebal = None
+        self.signaux = {}
+        self.dernier_financement = time.time()
         self.dirty = True
 
     # ---------- utilitaires ----------
@@ -105,11 +105,14 @@ class Bot:
         except Exception as e:
             self.log(f"prix indisponibles : {e}")
             return
+        maintenant_s = time.time()
+        self.pf.financer(self.prix, (maintenant_s - self.dernier_financement) / 3600)
+        self.dernier_financement = maintenant_s
         if self.btc_depart is None and "BTC" in self.prix:
             self.btc_depart = self.prix["BTC"]
         avant = len(self.pf.trades)
         for s in self.pf.maj_prix_et_stops(self.prix, maintenant()):
-            self.log(f"VENTE {s} : stop déclenché")
+            self.log(f"CLÔTURE {s} : {self.pf.trades[-1]['raison']}")
         v = self.valeur()
         self.pf.plus_haut = max(self.pf.plus_haut, v)
         if self.statut == "actif" and v <= self.pf.plus_haut * (1 - config.COUPE_CIRCUIT_DD):
@@ -121,38 +124,28 @@ class Bot:
 
     def decision_journaliere(self, series):
         clotures = {sym: [b[2] for b in bs] for sym, bs in series.items()}
-        if "BTC" not in clotures:
-            self.log("pas de données BTC, décision reportée")
+        if not all(s in clotures for s in config.UNIVERS):
+            self.log("données incomplètes, décision reportée")
             return
-        self.marche_ok = strategy.marche_favorable(clotures["BTC"])
-        self.rang = strategy.classement(clotures)
-        # sélection en vigueur = celle du dernier jour de rebalancement (identique à la recherche)
-        ts_btc = [b[0] for b in series["BTC"]]
-        dernier_rebal = max((t for t in ts_btc if strategy.jour_de_rebalancement(t)), default=None)
-        if dernier_rebal is None:
-            return
-        tronque = {sym: [b[2] for b in bs if b[0] <= dernier_rebal] for sym, bs in series.items()}
-        self.cible = strategy.selection(strategy.classement(tronque))
-        self.prochain_rebal = kraken_date(dernier_rebal + (config.REBAL_J + 1) * 86400)
+        self.signaux = strategy.signaux(clotures)
+        self.marche_ok = self.signaux.get("BTC", {}).get("sens") == "long"
         if self.statut != "actif":
             return
-        vendre, acheter = strategy.decisions(list(self.pf.positions), self.cible, self.marche_ok)
+        fermer, ouvrir = strategy.decisions(self.pf.positions, self.signaux)
         t = maintenant()
-        for sym, raison in vendre.items():
+        for sym, raison in fermer.items():
             if sym in self.prix:
+                sens = self.pf.positions[sym].get("sens", "long")
                 self.pf.vendre(sym, self.prix[sym], t, raison)
-                self.log(f"VENTE {sym} : {raison}")
-        acheter = [(sym, r) for sym, r in acheter if sym in self.prix]
-        places = config.NB_POSITIONS - len(self.pf.positions)
-        for n, (sym, raison) in enumerate(acheter):
-            if self.pf.acheter(sym, self.prix[sym], self.pf.cash / max(1, places - n), t, raison):
-                self.log(f"ACHAT {sym} : {raison}")
-        if not vendre and not acheter:
-            if self.marche_ok:
-                det = ", ".join(self.pf.positions) or "aucune"
-                self.log(f"Analyse du jour : rien à changer (sélection de la semaine : {', '.join(self.cible) or 'aucune en hausse'} ; positions : {det}).")
-            else:
-                self.log("Analyse du jour : BTC sous sa moyenne 100 jours, le bot reste en cash.")
+                self.log(f"{'VENTE' if sens == 'long' else 'RACHAT DU SHORT'} {sym} : {raison}")
+        for sym, sens, raison in ouvrir:
+            if sym in self.prix and sym not in self.pf.positions:
+                montant = self.valeur() * config.POIDS_PAR_ACTIF
+                if self.pf.ouvrir(sym, sens, self.prix[sym], montant, t, raison):
+                    self.log(f"{'ACHAT' if sens == 'long' else 'SHORT'} {sym} : {raison}")
+        if not fermer and not ouvrir:
+            resume = ", ".join(f"{s} {x['sens'] or 'neutre'} ({x['ecart_pct']:+.1f} % vs moyenne)" for s, x in self.signaux.items())
+            self.log(f"Analyse du jour : rien à changer. {resume}.")
         self.dirty = True
 
     def lire_controle(self):
@@ -205,7 +198,6 @@ class Bot:
 
     def sauver(self):
         v = self.valeur()
-        par_sym = {x["symbole"]: x for x in self.rang}
         etat = {
             **self.pf.etat(),
             "maj": maintenant(), "demarre_le": self.demarre_le, "statut": self.statut,
@@ -214,17 +206,13 @@ class Bot:
             "dernier_controle_id": self.dernier_controle,
             "paires": {s: kraken_ws(self.cles.get(s, ""), s) for s in set(self.univers) | set(self.pf.positions)},
             "prix": {s: self.prix[s] for s in set(self.univers) | set(self.pf.positions) if s in self.prix},
-            "classement": [{**x, "perf": round(x["perf"] * 100, 2), "selection": x["symbole"] in self.cible} for x in self.rang[:15]],
-            "selection_semaine": self.cible, "prochain_rebalancement": self.prochain_rebal,
-            "strategie": {"nom": "Rotation momentum hebdomadaire",
-                          "resume": f"Les {config.NB_POSITIONS} cryptos les plus fortes sur {config.LOOKBACK_J} jours parmi {len(config.UNIVERS)}, revues tous les {config.REBAL_J} jours, cash si le BTC passe sous sa moyenne {config.SMA_BTC_J} jours."},
-            "parametres": {"positions": config.NB_POSITIONS, "stop": config.STOP_SUIVEUR,
-                           "coupe_circuit": config.COUPE_CIRCUIT_DD, "frais": config.FRAIS,
-                           "lookback_j": config.LOOKBACK_J},
+            "signaux": {s: {k: (round(v, 4) if isinstance(v, float) else v) for k, v in x.items()} for s, x in self.signaux.items()},
+            "strategie": {"nom": "Tendance long/short BTC + ETH",
+                          "resume": f"BTC et ETH à {config.POIDS_PAR_ACTIF*100:.0f} % chacun : achat quand la clôture du jour est au-dessus de sa moyenne {config.SMA_J} jours, vente à découvert (short) quand elle est en dessous. Décision chaque jour juste après minuit UTC."},
+            "parametres": {"sma_j": config.SMA_J, "coupe_circuit": config.COUPE_CIRCUIT_DD,
+                           "frais": config.FRAIS, "financement_8h": config.FINANCEMENT_SHORT_8H},
             "courbe": self.courbe, "journal": self.journal,
         }
-        for s, p in etat["positions"].items():
-            p["rang"] = par_sym.get(s, {}).get("rang")
         (DATA / "state.json").write_text(json.dumps(etat, ensure_ascii=False, separators=(",", ":")))
         self.dirty = False
 
@@ -297,8 +285,9 @@ class Bot:
         if f.exists():
             try:
                 age = time.time() - f.stat().st_mtime
-                ancien = json.loads(f.read_text()).get("genere_le", "")
-                if ancien[:10] == maintenant()[:10] and age < 86400:
+                ancien = json.loads(f.read_text())
+                if ancien.get("strategie") == backtest.ID_STRATEGIE and \
+                        ancien.get("genere_le", "")[:10] == maintenant()[:10] and age < 86400:
                     return
             except Exception:
                 pass

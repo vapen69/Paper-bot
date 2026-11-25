@@ -52,7 +52,7 @@ h1{font-size:17px;margin:0;font-weight:800;letter-spacing:.2px}
 .row:first-child{border-top:0}
 .row .r{color:var(--mute);font-size:12px}
 .tag{font-size:11px;font-weight:800;padding:2px 7px;border-radius:6px;margin-right:6px}
-.tag.achat{background:rgba(77,163,255,.15);color:var(--acc)}.tag.vente{background:rgba(255,255,255,.08)}
+.tag.achat{background:rgba(47,209,122,.15);color:var(--up)}.tag.short{background:rgba(255,92,108,.15);color:var(--down)}.tag.vente,.tag.rachat{background:rgba(255,255,255,.08)}
 .bar{height:6px;border-radius:3px;background:var(--line);margin-top:4px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--acc)}
 .ctrl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
@@ -82,7 +82,7 @@ h1{font-size:17px;margin:0;font-weight:800;letter-spacing:.2px}
     <div class="kpi"><span>Si j'avais gardé du BTC</span><b class="num" id="kBtc">-</b></div>
     <div class="kpi"><span>Écart vs BTC</span><b class="num" id="kEcart">-</b></div>
     <div class="kpi"><span>Drawdown actuel</span><b class="num" id="kDd">-</b></div>
-    <div class="kpi"><span>Frais payés</span><b class="num" id="kFrais">-</b></div>
+    <div class="kpi"><span>Frais et financement</span><b class="num" id="kFrais">-</b></div>
   </div>
 
   <div class="card">
@@ -137,11 +137,12 @@ async function getJson(name) {
   return null;
 }
 
+function valPos(p, px) { return p.sens === "short" ? Math.max(0, p.qte * (2 * p.prix_entree - px) - (p.financement || 0)) : p.qte * px; }
 function prix(sym) { return live[sym] ?? S?.prix?.[sym]; }
 function valeurLive() {
   if (!S) return 0;
   let v = S.cash;
-  for (const [s, p] of Object.entries(S.positions)) v += p.qte * (prix(s) ?? p.dernier_prix);
+  for (const [s, p] of Object.entries(S.positions)) v += valPos(p, prix(s) ?? p.dernier_prix);
   return v;
 }
 
@@ -161,14 +162,14 @@ function renderLive() {
   }
   const ph = Math.max(S.plus_haut_portefeuille || dep, v);
   $("kDd").textContent = pct(-(1 - v / ph) * 100);
-  $("kFrais").textContent = eur(S.frais_total);
+  $("kFrais").textContent = eur((S.frais_total || 0) + (S.financement_total || 0));
   $("cash").textContent = "cash " + eur(S.cash);
   const pos = Object.entries(S.positions);
   $("positions").innerHTML = pos.length ? pos.map(([s, p]) => {
-    const px = prix(s) ?? p.dernier_prix, val = p.qte * px, pnl = val - p.cout;
-    return `<div class="pos"><div><div class="sym">${esc(s)}</div><div class="sub">Achat ${esc(prixFmt(p.prix_entree))} · ${esc(heure(p.depuis))}${p.rang ? " · rang " + esc(p.rang) + " sur 7 j" : ""}</div></div>
+    const px = prix(s) ?? p.dernier_prix, val = valPos(p, px), pnl = val - p.cout, sh = p.sens === "short";
+    return `<div class="pos"><div><div class="sym">${esc(s)} <span class="tag ${sh ? "short" : "achat"}">${sh ? "SHORT" : "LONG"}</span></div><div class="sub">${sh ? "Vendu à découvert" : "Acheté"} à ${esc(prixFmt(p.prix_entree))} · ${esc(heure(p.depuis))}</div><div class="sub">${sh ? "Gagne si le prix baisse" : "Gagne si le prix monte"}${p.financement ? " · financement payé " + esc(eur(p.financement, 3)) : ""}</div></div>
     <div style="text-align:right"><div class="num" data-px="${esc(s)}">${esc(prixFmt(px))}</div><div class="num ${pnl >= 0 ? "up" : "down"}">${pnl >= 0 ? "+" : ""}${esc(eur(pnl))} (${esc(pct(pnl / p.cout * 100))})</div><div class="sub num">${esc(eur(val))}</div></div></div>`;
-  }).join("") : `<div class="empty">Aucune position : le bot est en cash et attend un signal.</div>`;
+  }).join("") : `<div class="empty">Aucune position ouverte pour l'instant : elles s'ouvrent à l'analyse du jour.</div>`;
 }
 
 function renderState() {
@@ -176,15 +177,18 @@ function renderState() {
   $("statut").textContent = {actif: "● Actif", pause: "Pause", "coupe-circuit": "Coupe-circuit"}[st] || st;
   $("statut").className = "pill " + st;
   $("periode").textContent = "depuis le " + new Date(S.demarre_le).toLocaleDateString("fr-FR");
-  $("marche").textContent = S.marche_ok == null ? "" : S.marche_ok ? "marché favorable" : "marché défavorable : cash";
-  $("strat").textContent = (S.strategie?.resume || "") + (S.prochain_rebalancement ? " Prochaine révision de la sélection : " + new Date(S.prochain_rebalancement).toLocaleDateString("fr-FR") + "." : "");
+  $("marche").textContent = "moyenne " + (S.parametres?.sma_j ?? 50) + " jours";
+  $("strat").textContent = S.strategie?.resume || "";
   const tr = [...S.trades].reverse().slice(0, 25);
   $("nbTrades").textContent = S.trades.length + " au total";
-  $("trades").innerHTML = tr.length ? tr.map(t => `<div class="row"><div><span class="tag ${t.sens}">${t.sens === "achat" ? "ACHAT" : "VENTE"}</span><b>${esc(t.symbole)}</b><div class="r">${esc(t.raison)}</div></div>
+  $("trades").innerHTML = tr.length ? tr.map(t => `<div class="row"><div><span class="tag ${esc(t.sens)}">${esc({achat: "ACHAT", vente: "VENTE", short: "SHORT", rachat: "RACHAT"}[t.sens] || t.sens)}</span><b>${esc(t.symbole)}</b><div class="r">${esc(t.raison)}</div></div>
     <div style="text-align:right" class="num"><div>${esc(eur(t.montant))}</div>${t.pnl != null ? `<div class="${t.pnl >= 0 ? "up" : "down"}">${t.pnl >= 0 ? "+" : ""}${esc(eur(t.pnl))}</div>` : ""}<div class="r">${esc(heure(t.t))}</div></div></div>`).join("") : `<div class="empty">Pas encore de trade.</div>`;
-  const rg = S.classement || [];
-  const mx = Math.max(1, ...rg.map(x => Math.abs(x.perf)));
-  $("rang").innerHTML = rg.length ? rg.slice(0, 10).map(x => `<div class="row"><div style="flex:1"><b>${esc(x.rang)}. ${esc(x.symbole)}</b> <span class="r">${x.selection ? "sélection de la semaine" : x.eligible ? "en hausse" : "en baisse"}</span><div class="bar"><i style="width:${Math.abs(x.perf) / mx * 100}%;background:${x.perf >= 0 ? "var(--up)" : "var(--down)"}"></i></div></div><div class="num ${x.perf >= 0 ? "up" : "down"}">${esc(pct(x.perf))} <span class="r">7 j</span></div></div>`).join("") : `<div class="empty">Classement disponible après la première analyse horaire.</div>`;
+  const sg = Object.entries(S.signaux || {});
+  $("rang").innerHTML = sg.length ? sg.map(([s, x]) => { const px = prix(s) ?? x.cloture, ec = (px / x.moyenne - 1) * 100, w = Math.min(50, Math.abs(ec) * 2.5);
+    return `<div class="row"><div style="flex:1"><b>${esc(s)}</b> <span class="r">signal du jour : ${x.sens === "long" ? "LONG" : x.sens === "short" ? "SHORT" : "neutre"} · moyenne ${esc(prixFmt(x.moyenne))}</span>
+    <div class="bar" style="position:relative"><i style="position:absolute;left:${ec >= 0 ? 50 : 50 - w}%;width:${w}%;background:${ec >= 0 ? "var(--up)" : "var(--down)"}"></i></div></div>
+    <div class="num ${ec >= 0 ? "up" : "down"}">${esc(pct(ec))} <span class="r">vs moy.</span></div></div>`; }).join("") + `<p class="note">Le bot ne décide qu'une fois par jour, sur la clôture de minuit UTC. L'écart en direct indique seulement de quel côté penche le prochain signal.</p>`
+    : `<div class="empty">Signaux disponibles après la première analyse du jour.</div>`;
   $("journal").innerHTML = [...(S.journal || [])].reverse().map(l => `<div><time>${esc(heure(l.t))}</time>${esc(l.msg)}</div>`).join("");
   $("maj").textContent = "Dernière synchro du bot : " + new Date(S.maj).toLocaleString("fr-FR") + ". Les prix et la valeur bougent en direct.";
   drawChart(); renderLive(); subscribe();
@@ -226,7 +230,7 @@ document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click
 
 let subs = "";
 function subscribe() {
-  const syms = [...new Set(["BTC", ...Object.keys(S.positions), ...(S.classement || []).slice(0, 10).map(x => x.symbole)])].map(s => s + "/EUR");
+  const syms = [...new Set(["BTC", "ETH", ...Object.keys(S.positions)])].map(s => s + "/EUR");
   const key = syms.sort().join(",");
   if (ws && ws.readyState === 1 && key === subs) return;
   if (ws) try { ws.close(); } catch (e) {}

@@ -1,5 +1,7 @@
 """Logique de décision, partagée par le bot en direct et par le backtest.
-Réplique exacte de research.strategies.rotation_momentum (paramètres retenus dans config.py)."""
+Réplique de research.strategies.tendance_long_short (paramètres dans config.py) :
+pour chaque actif (BTC, ETH), 50 % du capital, long si la clôture journalière est au-dessus de sa moyenne
+SMA_J jours, short si elle est en dessous. Décision une fois par jour, après la clôture."""
 from . import config
 
 
@@ -9,41 +11,31 @@ def sma(valeurs, n):
     return sum(valeurs[-n:]) / n
 
 
-def marche_favorable(clotures_btc_j):
-    """Filtre de marché : BTC au-dessus de sa moyenne 100 jours (clôtures journalières terminées)."""
-    m = sma(clotures_btc_j, config.SMA_BTC_J)
-    return m is not None and clotures_btc_j[-1] > m
-
-
-def jour_de_rebalancement(ts_jour):
-    """ts_jour : timestamp (s) d'ouverture de la bougie journalière qui vient de se terminer."""
-    return (ts_jour // 86400) % config.REBAL_J == 0
-
-
-def classement(clotures_j):
-    """clotures_j : {symbole: [clôtures journalières terminées]}. Trié du plus fort au plus faible sur 7 jours."""
-    out = []
-    for sym, c in clotures_j.items():
-        if len(c) < config.LOOKBACK_J + 1:
+def signaux(clotures_j):
+    """clotures_j : {symbole: [clôtures journalières terminées]} -> {symbole: {sens, cloture, moyenne, ecart_pct}}."""
+    out = {}
+    for s in config.UNIVERS:
+        c = clotures_j.get(s, [])
+        m = sma(c, config.SMA_J)
+        if m is None:
             continue
-        perf = c[-1] / c[-1 - config.LOOKBACK_J] - 1
-        out.append({"symbole": sym, "perf": perf, "eligible": perf > 0})
-    out.sort(key=lambda x: x["perf"], reverse=True)
-    for i, x in enumerate(out):
-        x["rang"] = i + 1
+        sens = "long" if c[-1] > m else "short" if c[-1] < m else None
+        out[s] = {"sens": sens, "cloture": c[-1], "moyenne": m, "ecart_pct": (c[-1] / m - 1) * 100}
     return out
 
 
-def selection(rang):
-    """Les NB_POSITIONS plus fortes, à condition d'être en hausse sur 7 jours."""
-    return [x["symbole"] for x in rang[: config.NB_POSITIONS] if x["eligible"]]
-
-
-def decisions(detenus, cible, marche_ok):
-    """detenus : symboles en portefeuille ; cible : sélection en vigueur (revue tous les 7 jours).
-    Retourne (a_vendre {sym: raison}, a_acheter [(sym, raison)])."""
-    if not marche_ok:
-        return {s: "BTC sous sa moyenne 100 jours : passage en cash" for s in detenus}, []
-    a_vendre = {s: "ne fait plus partie des 2 plus fortes de la semaine" for s in detenus if s not in cible}
-    a_acheter = [(s, "dans les 2 plus fortes sur 7 jours") for s in cible if s not in detenus]
-    return a_vendre, a_acheter
+def decisions(positions, sig):
+    """positions : {symbole: {sens, ...}}. Retourne (a_fermer {sym: raison}, a_ouvrir [(sym, sens, raison)])."""
+    a_fermer, a_ouvrir = {}, []
+    for s, x in sig.items():
+        actuel = positions.get(s, {}).get("sens")
+        voulu = x["sens"]
+        if actuel == voulu:
+            continue
+        cote = "au-dessus" if x["ecart_pct"] > 0 else "en dessous"
+        raison = f"clôture {cote} de la moyenne {config.SMA_J} jours ({x['ecart_pct']:+.1f} %)"
+        if actuel is not None:
+            a_fermer[s] = raison
+        if voulu is not None:
+            a_ouvrir.append((s, voulu, raison))
+    return a_fermer, a_ouvrir
