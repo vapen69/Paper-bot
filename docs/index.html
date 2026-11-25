@@ -67,10 +67,14 @@ h1{font-size:17px;margin:0;font-weight:800;letter-spacing:.2px}
 .tabs button{flex:none;border:0;border-radius:99px;padding:8px 14px;min-height:38px;background:var(--line);color:var(--ink);font:600 13px "Inter Tight",sans-serif}
 .tabs button.on{background:var(--ink);color:var(--bg)}
 .err{background:rgba(255,92,108,.12);color:var(--down);border-radius:12px;padding:12px;font-size:14px;display:none}
+.switch{display:flex;gap:4px;padding:4px;margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:99px;width:max-content;max-width:100%}
+.switch a{padding:7px 16px;min-height:36px;border-radius:99px;color:var(--mute);text-decoration:none;font-weight:700;font-size:13px;display:flex;align-items:center}
+.switch a.on{background:var(--ink);color:var(--bg)}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <nav class="switch" aria-label="Choix du bot"><a class="on" href="index.html" aria-current="page">Crypto</a><a href="poly.html">Polymarket</a></nav>
   <header><h1>Paper Bot · crypto</h1><span id="statut" class="pill">…</span></header>
   <div id="err" class="err"></div>
   <section class="hero">

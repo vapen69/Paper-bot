@@ -1,0 +1,39 @@
+{
+ "id": "501",
+ "question": "Will the Fed cut rates in December?",
+ "conditionId": "0x00000000000000000000000000000000000000000000000000000000003c89bb",
+ "slug": "fed-cut-december",
+ "endDate": "2026-11-20T12:00:00Z",
+ "startDate": "2026-10-01T12:00:00Z",
+ "liquidity": "0.0",
+ "liquidityNum": 0.0,
+ "outcomes": "[\"Yes\", \"No\"]",
+ "outcomePrices": "[\"1\", \"0\"]",
+ "clobTokenIds": "[\"50100000000000000000001\", \"50100000000000000000002\"]",
+ "volume": "0.0",
+ "volumeNum": 0.0,
+ "volume24hr": 0.0,
+ "active": true,
+ "closed": true,
+ "umaResolutionStatus": "resolved",
+ "negRisk": false,
+ "restricted": true,
+ "acceptingOrders": false,
+ "enableOrderBook": true,
+ "orderPriceMinTickSize": 0.001,
+ "orderMinSize": 5,
+ "makerBaseFee": 0,
+ "takerBaseFee": 1000,
+ "bestBid": 0.999,
+ "bestAsk": 1.0,
+ "spread": 0.001,
+ "lastTradePrice": 1,
+ "events": [
+  {
+   "id": "9001",
+   "slug": "evenement-1",
+   "title": "\u00c9v\u00e9nement 1"
+  }
+ ],
+ "closedTime": "2026-11-20 18:03:11+00"
+}

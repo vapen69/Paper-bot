@@ -1,0 +1,48 @@
+name: Bot Polymarket
+
+on:
+  schedule:
+    - cron: "43 * * * *"   # relance de sécurité chaque heure (attend si une session tourne déjà)
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["polybot/**", "!polybot/research.py", ".github/workflows/polybot.yml"]
+
+concurrency:
+  group: polybot
+  cancel-in-progress: ${{ github.event_name == 'push' }}   # une mise à jour du code remplace la session en cours
+
+permissions:
+  contents: write
+  actions: write   # pour relancer lui-même la session suivante
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Récupérer l'état précédent (branche data-poly)
+        run: |
+          mkdir -p polybot_out
+          if git ls-remote --exit-code origin data-poly >/dev/null 2>&1; then
+            git fetch -q --depth 1 origin data-poly
+            git --work-tree=polybot_out checkout FETCH_HEAD -- . || true
+            git reset -q
+          fi
+          ls -la polybot_out
+      - name: Lancer le bot Polymarket (session de 5 h 40, argent fictif)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m polybot.runner
+      - name: Relancer la session suivante
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run polybot.yml --ref main --repo "$GITHUB_REPOSITORY" || echo "relance par le planning horaire"

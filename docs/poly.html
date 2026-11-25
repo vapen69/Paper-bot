@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>Paper Bot · Polymarket</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1117;--card:#151b23;--line:#262f3a;--ink:#e8edf2;--mute:#8b96a3;--up:#2fd17a;--down:#ff5c6c;--acc:#4da3ff;--btc:#f2a33a;--poly:#9d8cff}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Inter Tight",system-ui,sans-serif;padding:env(safe-area-inset-top) 0 40px;overflow-x:clip}
+.wrap{max-width:900px;margin:0 auto;padding:0 16px}
+.num{font-family:"JetBrains Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.switch{display:flex;gap:4px;padding:4px;margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:99px;width:max-content;max-width:100%}
+.switch a{padding:7px 16px;min-height:36px;border-radius:99px;color:var(--mute);text-decoration:none;font-weight:700;font-size:13px;display:flex;align-items:center}
+.switch a.on{background:var(--ink);color:var(--bg)}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 0 4px;gap:8px}
+h1{font-size:17px;margin:0;font-weight:800;letter-spacing:.2px}
+.pill{font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;background:var(--line);white-space:nowrap}
+.pill.actif{background:rgba(47,209,122,.15);color:var(--up)}
+.pill.pause{background:rgba(242,163,58,.15);color:var(--btc)}
+.pill.coupe-circuit{background:rgba(255,92,108,.15);color:var(--down)}
+.hero{padding:14px 0 8px}
+.hero .lab{color:var(--mute);font-size:13px}
+.big{font-size:clamp(40px,12vw,64px);font-weight:800;line-height:1.05;letter-spacing:-1px}
+.big small{font-size:.45em;color:var(--mute);font-weight:700}
+.delta{font-size:17px;font-weight:700;margin-top:4px;white-space:normal}
+.up{color:var(--up)}.down{color:var(--down)}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mute)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mute);flex:none}
+.dot.on{background:var(--up);animation:p 1.2s infinite}
+@keyframes p{50%{opacity:.35}}
+@media(prefers-reduced-motion:reduce){.dot.on{animation:none}.feed div.new{animation:none}}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:14px 0}
+@media(max-width:600px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.kpi b{display:block;font-size:18px}
+.kpi span{color:var(--mute);font-size:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
+.card h2{font-size:15px;margin:0 0 10px;font-weight:700;display:flex;justify-content:space-between;gap:8px}
+.card h2 span{color:var(--mute);font-weight:500;font-size:12px;text-align:right}
+.fig{position:relative;height:210px}.fig svg{position:absolute;inset:0;width:100%;height:100%}
+.empty{color:var(--mute);font-size:14px;padding:6px 0}
+.row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.row:first-child{border-top:0}
+.row .r{color:var(--mute);font-size:12px}
+.row>div:first-child{flex:1}
+.tag{font-size:11px;font-weight:800;padding:2px 7px;border-radius:6px;margin-right:6px;white-space:nowrap}
+.tag.achat{background:rgba(77,163,255,.15);color:var(--acc)}.tag.gagne{background:rgba(47,209,122,.15);color:var(--up)}
+.tag.perdu{background:rgba(255,92,108,.15);color:var(--down)}.tag.vente,.tag.neutre{background:rgba(255,255,255,.08)}
+.tag.exp{background:rgba(157,140,255,.16);color:var(--poly)}
+/* motif de la page : la barre de probabilité (0 % à gauche, 100 % à droite) */
+.pos{padding:12px 0;border-top:1px solid var(--line)}
+.pos:first-of-type{border-top:0}
+.pos .q{font-weight:700;font-size:15px;line-height:1.3;color:var(--ink);text-decoration:none;display:block}
+.pos .q:hover{text-decoration:underline}
+.pos .top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.pos .sub{color:var(--mute);font-size:12px}
+.proba{position:relative;height:26px;border-radius:7px;background:var(--line);margin:8px 0 4px;overflow:hidden}
+.proba i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,rgba(157,140,255,.35),var(--poly));transition:width .6s}
+.proba em{position:absolute;top:0;bottom:0;width:2px;background:var(--ink)}
+.proba b{position:absolute;right:8px;top:0;line-height:26px;font-size:12px;font-family:"JetBrains Mono",monospace}
+.echelle{display:flex;justify-content:space-between;font-size:11px;color:var(--mute)}
+.mini{height:6px;border-radius:3px;background:var(--line);margin-top:5px;overflow:hidden}
+.mini i{display:block;height:100%;background:var(--poly)}
+.pouls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:10px;text-align:center}
+.pouls div{background:var(--bg);border-radius:10px;padding:8px 4px}
+.pouls b{display:block;font-size:17px}.pouls span{color:var(--mute);font-size:11px;line-height:1.2;display:block}
+.feed{font-size:13px;max-height:250px;overflow:auto}
+.feed div{padding:6px 0;border-top:1px solid var(--line);display:flex;gap:8px;align-items:baseline}
+.feed div:first-child{border-top:0}
+.feed div.new{animation:fn 1.6s}
+@keyframes fn{from{background:rgba(157,140,255,.22)}}
+.feed time{color:var(--mute);font-size:11px;flex:none}
+.feed a{color:inherit}
+.ctrl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.ctrl a{display:flex;align-items:center;justify-content:center;min-height:46px;border-radius:12px;background:var(--line);color:var(--ink);text-decoration:none;font-weight:700;font-size:14px;text-align:center}
+.ctrl a.warn{background:rgba(255,92,108,.12);color:var(--down)}
+.note{color:var(--mute);font-size:12px;margin-top:8px}
+.log{font-size:12.5px;max-height:260px;overflow:auto}
+.log div{padding:4px 0;border-top:1px solid var(--line)}
+.log time{color:var(--mute);margin-right:6px}
+.verdict{font-size:14px;margin:6px 0 0}
+.bandeau{border-radius:10px;padding:9px 11px;font-size:13px;margin-bottom:10px;background:rgba(242,163,58,.12);color:var(--btc)}
+.bandeau.ok{background:rgba(47,209,122,.12);color:var(--up)}
+.err{background:rgba(255,92,108,.12);color:var(--down);border-radius:12px;padding:12px;font-size:14px;display:none;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="switch" aria-label="Choix du bot"><a href="index.html">Crypto</a><a class="on" href="poly.html" aria-current="page">Polymarket</a></nav>
+  <header><h1>Paper Bot · Polymarket</h1><span id="statut" class="pill">…</span></header>
+  <div id="err" class="err"></div>
+  <section class="hero">
+    <div class="lab">Valeur du portefeuille (argent fictif) <span class="live"><i id="dot" class="dot"></i><span id="liveTxt">connexion…</span></span></div>
+    <div class="big num" id="valeur">-</div>
+    <div class="delta num" id="delta">-</div>
+  </section>
+  <div class="kpis">
+    <div class="kpi"><span>Paris réglés gagnés</span><b class="num" id="kReussite">-</b></div>
+    <div class="kpi"><span>Gain déjà encaissé</span><b class="num" id="kRealise">-</b></div>
+    <div class="kpi"><span>Baisse depuis le plus haut</span><b class="num" id="kDd">-</b></div>
+    <div class="kpi"><span>Frais payés</span><b class="num" id="kFrais">-</b></div>
+  </div>
+
+  <div class="card">
+    <h2>Activité du bot <span id="scanAge"></span></h2>
+    <div class="pouls">
+      <div><b class="num" id="aScan">-</b><span>marchés scannés</span></div>
+      <div><b class="num" id="aFiltres">-</b><span>dans les filtres</span></div>
+      <div><b class="num" id="aCand">-</b><span>candidats</span></div>
+      <div><b class="num" id="aCarnets">-</b><span>carnets lus</span></div>
+    </div>
+    <div class="feed" id="flux"></div>
+  </div>
+
+  <div class="card">
+    <h2>Courbe <span id="periode"></span></h2>
+    <div class="fig" id="fig"><svg id="chart"></svg></div>
+  </div>
+
+  <div class="card"><h2>Positions ouvertes <span id="cash"></span></h2><div id="positions"></div></div>
+
+  <div class="card">
+    <h2>Commandes <span>depuis ton téléphone</span></h2>
+    <div class="ctrl">
+      <a id="cPause" target="_blank" rel="noopener">⏸ Pause</a>
+      <a id="cReprendre" target="_blank" rel="noopener">▶ Reprendre</a>
+      <a id="cVendre" class="warn" target="_blank" rel="noopener">Tout vendre</a>
+      <a id="cReset" class="warn" target="_blank" rel="noopener">Remettre à 100 $</a>
+    </div>
+    <p class="note">Ouvre la page GitHub « Commande Polymarket », touche « Run workflow », choisis l'action puis « Run workflow ». Le bot l'applique en moins d'une minute.</p>
+  </div>
+
+  <div class="card"><h2>Derniers trades <span id="nbTrades"></span></h2><div id="trades"></div></div>
+  <div class="card"><h2>Marchés surveillés <span id="nbSurv"></span></h2><p class="note" id="strat" style="margin:0 0 8px"></p><div id="surveilles"></div></div>
+  <div class="card"><h2>Recherche <span id="rsDate"></span></h2><div id="recherche"></div></div>
+  <div class="card"><h2>Journal du bot</h2><div class="log" id="journal"></div></div>
+  <p class="note" id="maj"></p>
+  <p class="note">Simulation uniquement : aucun ordre réel, aucun compte, aucun argent engagé. Les prix viennent des carnets publics de Polymarket.</p>
+</div>
+<script>
+{
+const host = location.hostname.endsWith("github.io") ? location.hostname.split(".")[0] : "vapen69";
+const repo = location.hostname.endsWith("github.io") ? (location.pathname.split("/")[1] || "Paper-bot") : "Paper-bot";
+const RAW = `https://raw.githubusercontent.com/${host}/${repo}/data-poly/`;
+const API = `https://api.github.com/repos/${host}/${repo}/contents/`;
+const WF = `https://github.com/${host}/${repo}/actions/workflows/commande_poly.yml`;
+const CLOB = "https://clob.polymarket.com";
+["cPause","cReprendre","cVendre","cReset"].forEach(id => document.getElementById(id).href = WF);
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const n = v => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
+const usd = (v, d = 2) => n(v).toLocaleString("fr-FR", {minimumFractionDigits: d, maximumFractionDigits: d}) + " $";
+const signe = v => (n(v) >= 0 ? "+" : "") + usd(v);
+const pct = (v, d = 2) => ((n(v) || 0) >= 0 ? "+" : "") + n(v).toLocaleString("fr-FR", {minimumFractionDigits: d, maximumFractionDigits: d}) + " %";
+const proba = p => (n(p) * 100).toLocaleString("fr-FR", {minimumFractionDigits: 1, maximumFractionDigits: 1}) + " %";
+const heure = t => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleString("fr-FR", {day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"}); };
+const hms = t => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleTimeString("fr-FR", {hour: "2-digit", minute: "2-digit"}); };
+// seuls les liens vers polymarket.com sont cliquables (les textes viennent d'une API externe)
+const lien = u => /^https:\/\/polymarket\.com\/[\w\-./%]*$/.test(String(u || "")) ? String(u) : "";
+const borne = v => Math.max(0, Math.min(100, n(v) * 100));
+
+function echeance(t) {
+  const d = new Date(t).getTime();
+  if (!t || isNaN(d)) return "échéance inconnue";
+  const s = (d - Date.now()) / 1000;
+  if (s <= 0) return "échéance passée, en attente du résultat";
+  const j = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return "résultat dans " + (j ? `${j} j ${h} h` : h ? `${h} h ${m} min` : `${m} min`);
+}
+
+let S = null, RS = null, live = {}, lastTick = 0, fluxVu = new Set(), premier = true;
+
+async function getJson(name) {
+  try { const r = await fetch(RAW + name + "?t=" + Date.now(), {cache: "no-store"}); if (r.ok) return await r.json(); } catch (e) {}
+  try { const r = await fetch(API + name + "?ref=data-poly", {headers: {Accept: "application/vnd.github.raw+json"}, cache: "no-store"}); if (r.ok) return await r.json(); } catch (e) {}
+  return null;
+}
+
+const positions = () => Object.entries(S?.positions || {});
+const prixPos = (jeton, p) => live[jeton] ?? n(p.dernier_prix);
+function valeurLive() {
+  let v = n(S.cash);
+  for (const [j, p] of positions()) v += n(p.parts) * prixPos(j, p);
+  return v;
+}
+
+function renderLive() {
+  if (!S) return;
+  const v = valeurLive(), dep = n(S.capital_depart) || 100;
+  $("valeur").innerHTML = esc(usd(v)).replace(/ \$$/, ' <small>$</small>');
+  const d = v - dep;
+  $("delta").textContent = `${signe(d)}  (${pct(d / dep * 100)}) depuis le départ`;
+  $("delta").className = "delta num " + (d >= 0 ? "up" : "down");
+  const ph = Math.max(n(S.plus_haut_portefeuille) || dep, v);
+  $("kDd").textContent = pct(Math.min(0, -(1 - v / ph) * 100) || 0);
+  const pos = positions();
+  const engage = pos.reduce((a, [, p]) => a + n(p.cout), 0);
+  $("cash").textContent = `${pos.length} ouverte(s) · ${usd(engage)} engagés · cash ${usd(S.cash)}`;
+  $("positions").innerHTML = pos.length ? pos.map(([j, p]) => {
+    const px = prixPos(j, p), val = n(p.parts) * px, pnl = val - n(p.cout), u = lien(p.url), exp = p.strategie === "baleines";
+    const titre = u ? `<a class="q" href="${esc(u)}" target="_blank" rel="noopener">${esc(p.question)}</a>` : `<span class="q">${esc(p.question)}</span>`;
+    return `<div class="pos"><div class="top"><div>${titre}<div class="sub">Pari sur « ${esc(p.issue)} » ${exp ? '<span class="tag exp">EXPÉRIMENTAL</span>' : ""}</div></div>
+      <div style="text-align:right"><div class="num ${pnl >= 0 ? "up" : "down"}">${esc(signe(pnl))}</div><div class="sub num">${esc(pct(n(p.cout) ? pnl / n(p.cout) * 100 : 0))}</div></div></div>
+      <div class="proba" role="img" aria-label="Probabilité actuelle ${esc(proba(px))}, achetée à ${esc(proba(p.prix_entree))}"><i style="width:${borne(px).toFixed(1)}%"></i><em style="left:${borne(p.prix_entree).toFixed(1)}%"></em><b>${esc(proba(px))}</b></div>
+      <div class="echelle"><span>acheté à ${esc(proba(p.prix_entree))} (trait blanc)</span><span>${esc(n(p.parts).toFixed(1))} parts · ${esc(usd(val))}</span></div>
+      <div class="sub">${esc(echeance(p.echeance))} · si « ${esc(p.issue)} » se réalise : ${esc(signe(n(p.parts) - n(p.cout)))}, sinon ${esc(signe(-n(p.cout)))}</div></div>`;
+  }).join("") : `<div class="empty">Aucune position ouverte pour l'instant : le bot attend un marché qui passe tous ses filtres.</div>`;
+  const a = S.activite || {};
+  if (a.dernier_scan) { const s = Math.max(0, Math.round((Date.now() - new Date(a.dernier_scan).getTime()) / 1000)); $("scanAge").textContent = s < 3600 ? `dernier scan il y a ${s < 90 ? s + " s" : Math.round(s / 60) + " min"}` : "scan ancien"; }
+}
+
+const TAGS = {achat: ["achat", "ACHAT"], vente: ["vente", "VENTE"], reglement: ["neutre", "RÉSOLU"]};
+const FLUX = {scan: ["neutre", "SCAN"], achat: ["achat", "ACHAT"], vente: ["vente", "VENTE"], reglement: ["gagne", "RÉSOLU"], baleine: ["exp", "BALEINE"], ecarte: ["neutre", "ÉCARTÉ"]};
+
+function renderState() {
+  const st = String(S.statut || "");
+  $("statut").textContent = {actif: "● Actif", pause: "Pause", "coupe-circuit": "Coupe-circuit"}[st] || st;
+  $("statut").className = "pill " + (["actif", "pause", "coupe-circuit"].includes(st) ? st : "");
+  $("periode").textContent = "depuis le " + new Date(S.demarre_le).toLocaleDateString("fr-FR");
+  const ps = Object.values(S.pnl_strategies || {});
+  const clos = ps.reduce((a, x) => a + n(x.clotures), 0), gagn = ps.reduce((a, x) => a + n(x.gagnants), 0), real = ps.reduce((a, x) => a + n(x.pnl), 0);
+  $("kReussite").textContent = clos ? `${gagn} / ${clos}` : "0";
+  $("kRealise").textContent = signe(real); $("kRealise").className = "num " + (real >= 0 ? "up" : "down");
+  $("kFrais").textContent = usd(S.frais_total);
+  const a = S.activite || {};
+  $("aScan").textContent = n(a.marches_scannes); $("aFiltres").textContent = n(a.dans_filtres);
+  $("aCand").textContent = n(a.candidats); $("aCarnets").textContent = n(a.carnets_lus).toLocaleString("fr-FR");
+  const flux = [...(a.flux || [])].reverse().slice(0, 40);
+  $("flux").innerHTML = flux.length ? flux.map(f => { const k = f.t + "|" + f.txt, nouveau = !premier && !fluxVu.has(k); fluxVu.add(k); const u = lien(f.url);
+    return `<div class="${nouveau ? "new" : ""}"><time class="num">${esc(hms(f.t))}</time><span><span class="tag ${(FLUX[f.type] || FLUX.scan)[0]}">${(FLUX[f.type] || ["", "INFO"])[1]}</span>${u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(f.txt)}</a>` : esc(f.txt)}</span></div>`; }).join("")
+    : `<div class="empty">Le premier scan arrive dans la minute.</div>`;
+  premier = false;
+  const tr = [...(S.trades || [])].reverse().slice(0, 30);
+  $("nbTrades").textContent = n(S.nb_trades) + " au total";
+  $("trades").innerHTML = tr.length ? tr.map(t => {
+    let [cls, lab] = TAGS[t.sens] || ["neutre", "?"];
+    if (t.sens === "reglement") [cls, lab] = n(t.pnl) > 0 ? ["gagne", "GAGNÉ"] : n(t.pnl) < 0 ? ["perdu", "PERDU"] : ["neutre", "RÉSOLU"];
+    return `<div class="row"><div><span class="tag ${cls}">${lab}</span>${t.strategie === "baleines" ? '<span class="tag exp">EXP.</span>' : ""}<b>${esc(t.issue)}</b> à ${esc(proba(t.prix))}<div>${esc(t.question)}</div><div class="r">${esc(t.raison)}</div></div>
+    <div style="text-align:right" class="num"><div>${esc(usd(t.montant))}</div>${t.pnl != null ? `<div class="${n(t.pnl) >= 0 ? "up" : "down"}">${esc(signe(t.pnl))}</div>` : ""}<div class="r">${esc(heure(t.t))}</div></div></div>`; }).join("") : `<div class="empty">Pas encore de trade.</div>`;
+  const sg = S.strategie || {}, ex = S.experimentale || {}, pm = S.parametres || {};
+  $("strat").innerHTML = `<b>${esc(sg.nom)}</b> (${sg.validee ? "validée par la recherche" : "non validée : mode observation, mises réduites"}). ${esc(sg.resume)} Mise : ${esc((n(sg.part_par_marche) * 100).toFixed(0))} % de la valeur par marché, ${esc(n(pm.positions_max))} positions au plus, écart achat/vente de ${esc((n(pm.spread_max) * 100).toFixed(0))} centimes maximum. ${esc(ex.nom)} : ${esc(ex.etat)}, budget plafonné à ${esc((n(ex.budget) * 100).toFixed(0))} %.`;
+  const sv = S.surveilles || [];
+  $("nbSurv").textContent = sv.length ? sv.length + " candidat(s)" : "";
+  $("surveilles").innerHTML = sv.length ? sv.map(x => { const u = lien(x.url), pos = String(x.etat) === "en position";
+    return `<div class="row"><div>${u ? `<a href="${esc(u)}" target="_blank" rel="noopener" style="color:inherit;font-weight:700">${esc(x.question)}</a>` : `<b>${esc(x.question)}</b>`}
+      <div class="r">« ${esc(x.issue)} » · ${esc(echeance(x.echeance))} · ${esc(n(x.volume24h).toLocaleString("fr-FR"))} $ échangés en 24 h</div>
+      <div class="mini"><i style="width:${borne(x.prix).toFixed(1)}%"></i></div><div class="r" style="color:${pos ? "var(--up)" : "var(--mute)"}">${esc(x.etat)}</div></div>
+      <div class="num">${esc(proba(x.prix))}</div></div>`; }).join("")
+    : `<div class="empty">Aucun marché ne correspond à la stratégie en ce moment. Le bot rescanne chaque minute.</div>`;
+  $("journal").innerHTML = [...(S.journal || [])].reverse().map(l => `<div><time>${esc(heure(l.t))}</time>${esc(l.msg)}</div>`).join("");
+  const retard = (Date.now() - new Date(S.maj).getTime()) / 60000;
+  $("maj").textContent = "Dernière synchro du bot : " + new Date(S.maj).toLocaleString("fr-FR") + (retard > 15 ? " (le bot semble arrêté ou en cours de relance)." : ". Les prix des positions bougent en direct.");
+  drawChart(); renderLive();
+}
+
+function drawChart() {
+  const svg = $("chart"), W = svg.clientWidth, H = svg.clientHeight;
+  const c = (S?.courbe || []).filter(p => Number.isFinite(Number(p.v)));
+  if (c.length < 2 || !W) { svg.innerHTML = `<text x="12" y="24" fill="#8b96a3" font-size="13">La courbe se remplit au fil des heures.</text>`; return; }
+  const dep = n(S.capital_depart) || 100, vals = c.map(p => Number(p.v)).concat(dep), lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * .1 || 1;
+  const y = v => H - 22 - (v - (lo - pad)) / (hi - lo + 2 * pad) * (H - 34), x = i => 44 + i / (c.length - 1) * (W - 52);
+  const path = c.map((p, i) => (i ? "L" : "M") + x(i).toFixed(1) + "," + y(Number(p.v)).toFixed(1)).join("");
+  const ticks = [lo, (lo + hi) / 2, hi];
+  svg.innerHTML = ticks.map(t => `<line x1="44" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke="#262f3a"/><text x="0" y="${y(t) + 4}" fill="#8b96a3" font-size="11" font-family="JetBrains Mono">${t.toFixed(W < 520 ? 0 : 1)}</text>`).join("")
+    + `<line x1="44" x2="${W}" y1="${y(dep)}" y2="${y(dep)}" stroke="#8b96a3" stroke-dasharray="3 4" opacity=".6"/>`
+    + `<path d="${path}" fill="none" stroke="#9d8cff" stroke-width="2.2"/>`
+    + `<text x="44" y="${H - 4}" fill="#8b96a3" font-size="11">${esc(heure(c[0].t))}</text><text x="${W}" y="${H - 4}" fill="#8b96a3" font-size="11" text-anchor="end">${esc(heure(c[c.length - 1].t))}</text>`;
+}
+
+function renderRecherche() {
+  if (!RS) { $("recherche").innerHTML = `<div class="empty">Recherche pas encore publiée. Elle rejoue plusieurs stratégies sur des milliers de marchés déjà résolus, coûts inclus, et ne valide que ce qui tient sur une période jamais vue. En attendant, le bot tourne en mode observation.</div>`; return; }
+  const c = RS.choix || {}, per = RS.periode || {};
+  $("rsDate").textContent = (RS.genere_le || "").slice(0, 10);
+  const rows = (RS.strategies || []).map(s => { const o = s.oos || {}, pf = s.portefeuille || {}, r = n(o.rend_moyen_pct);
+    return `<div class="row"><div><b>${esc(s.nom)}</b> <span class="tag ${s.eligible ? "gagne" : "neutre"}">${s.eligible ? "VALIDÉE" : s.nom === RS.reference ? "RÉFÉRENCE" : "NON VALIDÉE"}</span><div class="r">${esc(s.description)}</div>
+      <div class="r">${esc(n(o.nb_trades))} trades · ${esc(n(o.gagnants_pct).toFixed(0))} % gagnants pour un prix moyen payé de ${esc(proba(o.prix_moyen))} · ${esc(n(o.jours_moyens).toFixed(1))} j bloqués · pire série : ${esc(n(o.pire_serie_pertes))} pertes</div>
+      ${(s.refus || []).length ? `<div class="r">Refus : ${esc(s.refus.join(" ; "))}</div>` : ""}</div>
+      <div class="num" style="text-align:right"><div class="${r >= 0 ? "up" : "down"}">${esc(pct(r))}</div><div class="r">par trade · t ${esc(n(o.t_stat).toFixed(2))}</div><div class="r">100 $ : ${esc(pct(pf.rendement_pct, 1))}</div><div class="r">baisse ${esc(pct(-Math.abs(n(pf.drawdown_max_pct)), 0))}</div></div></div>`; }).join("");
+  $("recherche").innerHTML = `<div class="bandeau ${c.valide ? "ok" : ""}">${c.valide ? "Stratégie validée par la règle fixée à l'avance" : "Aucune stratégie validée : aucun avantage prouvé, le bot observe à mises réduites"}</div>
+    <p class="verdict">${esc(RS.verdict)}</p>
+    <p class="note">${esc(n(RS.nb_marches).toLocaleString("fr-FR"))} marchés résolus du ${esc((per.debut || "").slice(0, 10))} au ${esc((per.fin || "").slice(0, 10))}. Résultats ci-dessous : uniquement après le ${esc((per.coupure || "").slice(0, 10))}, période jamais vue pendant le réglage, coûts déduits.${RS.source === "synthetique" ? " DONNÉES FICTIVES." : ""}</p>
+    ${rows}
+    <details class="note"><summary>Règle de sélection et limites</summary><p>${esc(RS.regle_selection)}</p>${(RS.avertissements || []).map(a => `<p>· ${esc(a)}</p>`).join("")}</details>`;
+}
+
+// prix en direct : milieu du carnet public pour chaque position ouverte (échec silencieux si le navigateur est bloqué)
+async function milieu(jeton) {
+  try {
+    const r = await fetch(`${CLOB}/midpoint?token_id=${encodeURIComponent(jeton)}`, {cache: "no-store"});
+    if (r.ok) { const m = Number((await r.json()).mid); if (m > 0 && m < 1) return m; }
+  } catch (e) {}
+  try {
+    const r = await fetch(`${CLOB}/book?token_id=${encodeURIComponent(jeton)}`, {cache: "no-store"});
+    if (!r.ok) return null;
+    const b = await r.json(), prix = l => (Array.isArray(l) ? l : []).map(x => Number(x.price)).filter(x => x > 0 && x < 1);
+    const bids = prix(b.bids), asks = prix(b.asks);
+    if (bids.length && asks.length) { const bb = Math.max(...bids), ba = Math.min(...asks); return ba - bb <= 0.1 ? (bb + ba) / 2 : bb; }
+    return bids.length ? Math.max(...bids) : null;
+  } catch (e) { return null; }
+}
+let occupe = false;
+async function tickLive() {
+  if (!S || occupe || document.hidden) return;
+  const jetons = Object.keys(S.positions || {}).filter(j => /^\d+$/.test(j)).slice(0, 20);
+  if (!jetons.length) return;
+  occupe = true;
+  try {
+    const res = await Promise.all(jetons.map(milieu));
+    res.forEach((m, i) => { if (m != null) { live[jetons[i]] = m; lastTick = Date.now(); } });
+    for (const j of Object.keys(live)) if (!S.positions[j]) delete live[j];
+  } catch (e) {} finally { occupe = false; }
+  renderLive();
+}
+setInterval(() => {
+  if (!S) return;
+  const direct = Date.now() - lastTick < 25000, frais = Date.now() - new Date(S.maj).getTime() < 180000;
+  $("dot").className = "dot" + (direct || frais ? " on" : "");
+  $("liveTxt").textContent = direct ? "prix en direct" : frais ? "bot actif" : "en attente du bot";
+  renderLive();
+}, 1000);
+
+async function refresh() {
+  const s = await getJson("state_poly.json");
+  if (!s || typeof s !== "object") { if (!S) { $("err").style.display = "block"; $("err").textContent = "Le bot Polymarket n'a pas encore publié de données (premier démarrage en cours, réessaie dans quelques minutes)."; } return; }
+  $("err").style.display = "none";
+  S = s;
+  try { renderState(); } catch (e) { console.error(e); }
+  tickLive();
+}
+async function refreshRecherche() { RS = await getJson("research_poly.json"); try { renderRecherche(); } catch (e) { console.error(e); } }
+new ResizeObserver(() => S && drawChart()).observe($("fig"));
+refresh(); refreshRecherche();
+setInterval(refresh, 30000); setInterval(tickLive, 8000); setInterval(refreshRecherche, 600000);
+}
+</script>
+</body>
+</html>

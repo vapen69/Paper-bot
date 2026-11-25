@@ -3,7 +3,7 @@
 Bot de paper trading crypto qui tourne en continu sur les serveurs GitHub, avec un capital fictif de 100 €.
 Aucun argent réel n'est engagé.
 
-- **Tableau de bord** : https://vapen69.github.io/Paper-bot/
+- **Tableaux de bord** : https://vapen69.github.io/Paper-bot/ (crypto) et https://vapen69.github.io/Paper-bot/poly.html (Polymarket, 100 USDC fictifs)
 - **Commandes** (pause, reprise, tout vendre, remise à 100 €) : onglet Actions > « Commande » > Run workflow
 - **Données** : prix publics Kraken (paires EUR), frais 0,40 % + slippage 0,10 % par ordre simulés
 - **Stratégie en direct** : tendance long/short sur BTC et ETH (50 % chacun) : achat au-dessus de la moyenne 50 jours, vente à découvert en dessous, décision une fois par jour. Choisie par la recherche hors échantillon (règle fixée à l'avance).

@@ -1,0 +1,58 @@
+name: Recherche Polymarket
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["polybot/research.py", "polybot/strategies.py", ".github/workflows/recherche_poly.yml"]
+  schedule:
+    - cron: "23 4 * * 1"   # chaque lundi
+
+concurrency:
+  group: recherche-poly
+
+permissions:
+  contents: write
+
+jobs:
+  recherche:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: polybot/cache
+          key: recherche-poly-${{ github.run_id }}
+          restore-keys: recherche-poly-
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest -q tests/test_polybot.py
+      - name: Recherche sur les marchés résolus
+        run: python -m polybot.research
+      - name: Publier les résultats sur la branche data-poly
+        run: |
+          # le bot réécrit la branche chaque minute : on publie, on vérifie, on recommence si besoin
+          for essai in 1 2 3 4; do
+            rm -rf /tmp/pub && mkdir -p /tmp/pub && cd /tmp/pub
+            git init -q && git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+            git fetch -q --depth 1 origin data-poly && git checkout -q -b data-poly FETCH_HEAD || git checkout -q -b data-poly
+            cp "$GITHUB_WORKSPACE"/polybot_out/research_poly.* .
+            git config user.name "paper-bot" && git config user.email "paper-bot@users.noreply.github.com"
+            git add -A && git commit -qm "recherche polymarket $(date -u +%F)" || true
+            git push -q origin data-poly || { sleep 7; continue; }
+            sleep 100
+            git fetch -q --depth 1 origin data-poly
+            if git show FETCH_HEAD:research_poly.json | cmp -s - "$GITHUB_WORKSPACE"/polybot_out/research_poly.json; then
+              echo "résultats publiés (essai $essai)"; exit 0
+            fi
+          done
+          echo "publication non confirmée après 4 essais"; exit 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recherche-polymarket
+          path: polybot_out/research_poly.*
+          if-no-files-found: ignore

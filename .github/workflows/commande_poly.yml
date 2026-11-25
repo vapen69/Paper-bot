@@ -1,0 +1,35 @@
+name: Commande Polymarket
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Que doit faire le bot Polymarket ?"
+        required: true
+        type: choice
+        options:
+          - pause
+          - reprendre
+          - tout_vendre
+          - reinitialiser
+
+concurrency:
+  group: commande-poly
+
+permissions:
+  contents: write
+
+jobs:
+  envoyer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Écrire la commande
+        run: |
+          echo "{\"commande\": \"${{ inputs.action }}\", \"id\": \"${{ github.run_id }}\", \"envoyee_le\": \"$(date -u +%FT%TZ)\"}" > control_poly.json
+          git config user.name "paper-bot"
+          git config user.email "paper-bot@users.noreply.github.com"
+          git add control_poly.json
+          git commit -m "Commande Polymarket : ${{ inputs.action }}"
+          git pull -q --rebase origin main
+          git push
