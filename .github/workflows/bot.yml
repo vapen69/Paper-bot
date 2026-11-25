@@ -1,0 +1,39 @@
+name: Bot
+
+on:
+  schedule:
+    - cron: "17 * * * *"   # relance de sécurité chaque heure (attend si une session tourne déjà)
+  workflow_dispatch:
+
+concurrency:
+  group: bot
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Récupérer l'état précédent (branche data)
+        run: |
+          mkdir -p data_out
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch -q --depth 1 origin data
+            git --work-tree=data_out checkout FETCH_HEAD -- . || true
+            git reset -q
+          fi
+          ls -la data_out
+      - name: Lancer le bot (session de 5 h 45)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m bot.runner
