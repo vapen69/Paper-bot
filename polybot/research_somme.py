@@ -199,7 +199,13 @@ def analyser(evts, infos, journal=print):
                           "apprentissage": metriques([x for x in base if x["t_out"] < t_coupe]),
                           "oos": metriques(oos), "frais_actuels": metriques(frais),
                           "mises_4pct": {"drawdown_max_pct": dd, "rendement_pct": rend},
-                          "somme_mediane_au_signal": round(float(np.median(sommes)), 3) if sommes else None})
+                          "somme_mediane_au_signal": round(float(np.median(sommes)), 3) if sommes else None,
+                          "detail_oos": {
+                              "somme_trop_haute": metriques([x for x in oos if x["somme"] > 1])["rend_moyen_pct"],
+                              "somme_trop_basse": metriques([x for x in oos if x["somme"] < 1])["rend_moyen_pct"],
+                              "nb_somme_trop_haute": sum(1 for x in oos if x["somme"] > 1),
+                              "rend_median_pct": round(100 * float(np.median([x["rend"] for x in oos])), 2) if oos else 0.0,
+                              "issues_mediane": float(np.median([x["issues"] for x in oos])) if oos else 0.0}})
     ref = next(s for s in resultats if s["nom"] == REFERENCE)["oos"]["rend_capital_temps_an_pct"]
     eligibles = []
     for s in resultats:
@@ -267,12 +273,25 @@ def ecrire(r, dossier=SORTIE):
     for s in r["strategies"]:
         L += [f"### {s['nom']}", "", s["description"], "",
               f"- Essais sur l'apprentissage : {json.dumps(s['essais_apprentissage'], ensure_ascii=False)}",
+              f"- Détail sur la période jamais vue : {json.dumps(s['detail_oos'], ensure_ascii=False)}",
               "- Refus : " + ("aucun, stratégie éligible" if s["eligible"] else " ; ".join(s["refus"])), ""]
     L += ["## Limites", "",
           "- L'historique donne un prix par issue, pas le carnet : une somme qui s'écarte de 1 peut venir d'issues peu "
           "échangées dont le dernier prix est ancien. Le demi-écart d'au moins 1 centime par jambe en tient compte.",
           "- Les événements sont choisis d'après leur volume final, connu après coup.",
           "- Les performances passées ne garantissent rien.", ""]
+    c = r.get("carnets")
+    if c:
+        L += ["## Vérification sur les vrais carnets d'ordres (événements ouverts)", "",
+              f"{c['genere_le']} : {c['nb_lus']} événements ouverts lus, {c['nb_complets']} avec un carnet complet. "
+              f"Écart médian affiché entre la somme des Oui et 1 : {c['ecart_affiche_median']}. "
+              f"Événements dont la somme affichée s'écarte d'au moins 10 points : {c['nb_ecart_affiche_10pts']}. "
+              f"Paniers gagnants si on achète vraiment {c['parts']:.0f} parts de chaque jambe au carnet, frais compris : "
+              f"**{c['nb_paniers_gagnants']}**.", "",
+              "| Événement | Issues | Somme affichée | Gain panier Non | Gain panier Oui |", "|---|---|---|---|---|"]
+        L += [f"| {m['titre']} | {m['issues']} | {m['somme_affichee']} | {m['gain_panier_non']:+.3f} | "
+              f"{m['gain_panier_oui']:+.3f} |" for m in c["meilleurs"]]
+        L += [""]
     (dossier / "research_somme.md").write_text("\n".join(L))
 
 
@@ -358,6 +377,72 @@ def telecharger(mois=MOIS, par_mois=EVENEMENTS_PAR_MOIS, journal=print):
     return evts
 
 
+# ---------- vérification sur les vrais carnets (événements ouverts) ----------
+PARTS_CARNET = 10.0
+
+
+def cout_carnet(asks, parts=PARTS_CARNET):
+    """Prix moyen payé pour `parts` parts en remontant les asks, ou None si le carnet est trop mince."""
+    reste, total = parts, 0.0
+    for prix, taille in asks:
+        q = min(reste, taille)
+        total += q * prix
+        reste -= q
+        if reste <= 1e-9:
+            return total / parts
+    return None
+
+
+def evaluer_paniers(brut, carnets, couts=None):
+    """Événement ouvert + carnets {jeton: carnet} -> écart affiché et coût réel des deux paniers, ou None."""
+    couts = couts or SCENARIOS["base"]
+    marches = [api.parse_marche(m) for m in brut.get("markets") or []]
+    if not marches or any(m is None or m["ferme"] or not m["accepte_ordres"] for m in marches):
+        return None
+    if not (ISSUES_MIN <= len(marches) <= ISSUES_MAX) or any(m["prix"][0] is None for m in marches):
+        return None
+    oui = non = 0.0
+    for m in marches:
+        a_oui = cout_carnet((carnets.get(m["jetons"][0]) or {}).get("asks") or [])
+        a_non = cout_carnet((carnets.get(m["jetons"][1]) or {}).get("asks") or [])
+        if a_oui is None or a_non is None:
+            return None
+        oui += a_oui + _frais(a_oui, m.get("frais_bps"), couts)
+        non += a_non + _frais(a_non, m.get("frais_bps"), couts)
+    n = len(marches)
+    return {"id": str(brut.get("id")), "titre": str(brut.get("title") or "")[:120], "issues": n,
+            "somme_affichee": round(sum(m["prix"][0] for m in marches), 4),
+            "gain_panier_non": round((n - 1) - non, 4), "gain_panier_oui": round(1.0 - oui, 4)}
+
+
+def verifier_carnets(nb=150, journal=print):
+    lot = _evenements_gamma({"closed": "false", "active": "true", "order": "volume24hr", "ascending": "false"}, pages=4)
+    lot = [e for e in lot if e.get("negRisk") and ISSUES_MIN <= len(e.get("markets") or []) <= ISSUES_MAX][:nb]
+    res = []
+    for brut in lot:
+        carnets = {}
+        for m in (api.parse_marche(x) for x in brut.get("markets") or []):
+            if m is None:
+                break
+            for j in m["jetons"]:
+                try:
+                    carnets[j] = api.carnet(j)
+                except Exception:
+                    carnets[j] = {}
+        r = evaluer_paniers(brut, carnets)
+        if r:
+            res.append(r)
+    ecarts = [abs(r["somme_affichee"] - 1) for r in res]
+    gagnants = [r for r in res if max(r["gain_panier_non"], r["gain_panier_oui"]) > 0]
+    journal(f"Carnets : {len(lot)} événements ouverts lus, {len(res)} complets, {len(gagnants)} panier(s) gagnant(s)")
+    return {"genere_le": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), "nb_lus": len(lot),
+            "nb_complets": len(res), "parts": PARTS_CARNET,
+            "ecart_affiche_median": round(float(np.median(ecarts)), 4) if ecarts else None,
+            "nb_ecart_affiche_10pts": sum(1 for x in ecarts if x >= 0.10),
+            "nb_paniers_gagnants": len(gagnants),
+            "meilleurs": sorted(res, key=lambda r: -max(r["gain_panier_non"], r["gain_panier_oui"]))[:10]}
+
+
 # ---------- données fictives ----------
 def synthetique(nb=400, graine=5, biais=0.0, jours=420):
     """Événements fictifs. biais = 0 : les prix sont de vraies probabilités qui somment à 1 (plus un petit bruit),
@@ -398,6 +483,11 @@ def main(argv=None):
         if len(evts) < 60:
             raise SystemExit(f"Trop peu d'événements utilisables ({len(evts)}) : aucun fichier écrit.")
     r = analyser(evts, infos)
+    if not args.synthetic:
+        try:
+            r["carnets"] = verifier_carnets()
+        except Exception as exc:          # la vérification ne doit jamais empêcher de publier la recherche
+            print(f"Vérification des carnets impossible : {exc}")
     ecrire(r, Path(args.sortie))
     print(r["verdict"])
     return r

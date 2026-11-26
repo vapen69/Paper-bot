@@ -562,7 +562,7 @@ class Bot:
         try:
             subprocess.run(["git", "fetch", "-q", "--depth", "1", "origin", BRANCHE], cwd=RACINE, check=True,
                            timeout=30, capture_output=True)
-            for nom in ("research_poly.json", "research_poly.md"):
+            for nom in ("research_poly.json", "research_poly.md", "research_somme.json", "research_somme.md"):
                 r = subprocess.run(["git", "show", f"FETCH_HEAD:{nom}"], cwd=RACINE, capture_output=True, timeout=30)
                 if r.returncode == 0 and r.stdout:
                     (DATA / nom).write_bytes(r.stdout)
