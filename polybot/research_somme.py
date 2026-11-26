@@ -486,6 +486,14 @@ def main(argv=None):
     if not args.synthetic:
         try:
             r["carnets"] = verifier_carnets()
+            if r["choix"]["valide"] and r["carnets"]["nb_paniers_gagnants"] == 0:
+                # l'avantage vu sur l'historique n'existe pas aux prix réellement payables : pas de validation
+                r["choix"]["valide"] = False
+                r["choix"]["dementi_par_carnets"] = True
+                r["verdict"] = ("DÉMENTI PAR LES VRAIS CARNETS. " + r["verdict"] + " Mais sur "
+                                f"{r['carnets']['nb_complets']} événements ouverts lus au carnet, aucun panier n'est "
+                                "gagnant une fois payé le vrai prix demandé : l'écart vu dans l'historique vient des "
+                                "prix affichés, pas de prix qu'on peut obtenir. Stratégie NON validée.")
         except Exception as exc:          # la vérification ne doit jamais empêcher de publier la recherche
             print(f"Vérification des carnets impossible : {exc}")
     ecrire(r, Path(args.sortie))
