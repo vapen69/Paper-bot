@@ -196,25 +196,53 @@ const VUE_POLY = `
   <p class="note" id="pMaj"></p>
   <p class="note">Simulation uniquement : aucun ordre réel, aucun compte, aucun argent engagé. Les prix viennent des carnets publics de Polymarket.</p>`;
 
+/* Accueil : les deux bots d'un coup d'œil, pensé pour le téléphone (appli sur l'écran d'accueil). */
+const VUE_ACCUEIL = `
+  <header><h1>Paper Bot <em>argent fictif</em></h1><span id="rSante" class="pill">…</span></header>
+  <p class="rjour" id="rJour"></p>
+  <div class="card rinstall entre" id="rInstall" hidden></div>
+  <a class="rcarte entre" id="rCrypto" data-vue="crypto" href="${T.lienVue ? "#crypto" : "index.html"}">
+    <div class="rtete"><span class="rnom"><i class="rlogo">₿</i>Crypto <span>100 € au départ</span></span><span id="rCStatut" class="pill">…</span></div>
+    <div class="rval"><b class="num" id="rCVal">-</b><span class="num" id="rCDelta"></span></div>
+    <div class="rspark" id="rCSpark"></div>
+    <div class="rfaits"><div><span>Face à « garder du BTC »</span><b class="num" id="rCBtc">-</b></div><div><span>Positions</span><b id="rCPos">-</b></div><div><span>Prochaine décision</span><b class="num" id="rCDec">-</b></div></div>
+    <span class="rgo">Voir le détail<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+  </a>
+  <a class="rcarte entre" id="rPoly" data-vue="poly" href="${T.lienVue ? "#polymarket" : "poly.html"}">
+    <div class="rtete"><span class="rnom"><i class="rlogo">%</i>Polymarket <span>100 $ au départ</span></span><span id="rPStatut" class="pill">…</span></div>
+    <div class="rval"><b class="num" id="rPVal">-</b><span class="num" id="rPDelta"></span></div>
+    <div class="rspark" id="rPSpark"></div>
+    <div class="rscore" id="rPScore"></div>
+    <div class="rfaits"><div><span>Paris réglés</span><b id="rPRegles">-</b></div><div><span>En cours</span><b class="num" id="rPCours">-</b></div><div><span>Prochain résultat</span><b class="num" id="rPProchain">-</b></div></div>
+    <span class="rgo">Voir le détail<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+  </a>
+  <a class="rarene entre" id="rArene" data-vue="poly" data-ancre="aFig" href="${T.lienVue ? "#polymarket" : "poly.html"}"><span class="rnom"><span>Arène Polymarket</span><b id="rAreneTxt">chargement…</b></span><span class="num" id="rAreneVal"></span></a>
+  <p class="note" id="rMaj"></p>`;
+
 const app = document.getElementById("app");
 app.innerHTML = `<div class="wrap">
-  <div class="top"><nav class="switch" aria-label="Choix du bot"><span class="glis" id="glis"></span><a data-vue="crypto" href="${T.lienVue ? "#crypto" : "index.html"}"><i></i>Crypto</a><a data-vue="poly" href="${T.lienVue ? "#polymarket" : "poly.html"}"><i></i>Polymarket</a></nav><span class="horloge num" id="horloge"></span></div>
-  <div id="vueCrypto">${VUE_CRYPTO}</div><div id="vuePoly" class="poly" hidden>${VUE_POLY}</div></div>`;
+  <div class="top"><nav class="switch" aria-label="Choix du bot"><span class="glis" id="glis"></span><a data-vue="accueil" href="${T.lienVue ? "#accueil" : "accueil.html"}"><i></i>Accueil</a><a data-vue="crypto" href="${T.lienVue ? "#crypto" : "index.html"}"><i></i>Crypto</a><a data-vue="poly" href="${T.lienVue ? "#polymarket" : "poly.html"}"><i></i>Polymarket</a></nav><span class="horloge num" id="horloge"></span></div>
+  <div id="vueAccueil" hidden>${VUE_ACCUEIL}</div><div id="vueCrypto" hidden>${VUE_CRYPTO}</div><div id="vuePoly" class="poly" hidden>${VUE_POLY}</div></div>`;
 
-let vue = document.body.dataset.vue === "poly" || location.hash === "#polymarket" ? "poly" : "crypto";
+const VUES = {accueil: ["vueAccueil", "#accueil", "accueil.html", "Paper Bot"], crypto: ["vueCrypto", "#crypto", "index.html", "Paper Bot · Crypto"], poly: ["vuePoly", "#polymarket", "poly.html", "Paper Bot · Polymarket"]};
+const vueDuHash = h => h === "#polymarket" ? "poly" : h === "#crypto" ? "crypto" : h === "#accueil" ? "accueil" : null;
+let vue = vueDuHash(location.hash) || (VUES[document.body.dataset.vue] ? document.body.dataset.vue : T.lienVue ? "accueil" : "crypto");
 function montreVue(v, pousse) {
   vue = v;
-  $("vueCrypto").hidden = v !== "crypto"; $("vuePoly").hidden = v !== "poly";
+  for (const [k, [id]] of Object.entries(VUES)) $(id).hidden = k !== v;
   document.querySelectorAll(".switch a").forEach(a => { const on = a.dataset.vue === v; a.classList.toggle("on", on); if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   const a = document.querySelector(`.switch a[data-vue="${v}"]`), g = $("glis");
   g.style.left = a.offsetLeft + "px"; g.style.width = a.offsetWidth + "px";
-  document.title = v === "poly" ? "Paper Bot · Polymarket" : "Paper Bot";
-  if (pousse) { if (T.lienVue) history.replaceState(null, "", v === "poly" ? "#polymarket" : "#crypto"); else history.replaceState(null, "", v === "poly" ? "poly.html" : "index.html"); }
-  document.querySelectorAll(`#${v === "poly" ? "vuePoly" : "vueCrypto"} .entre`).forEach((el, i) => { el.style.animationDelay = Math.round(i * 38 + (((i * 2654435761) >>> 0) % 23)) + "ms"; el.classList.remove("entre"); void el.offsetWidth; el.classList.add("entre"); });
-  if (v === "crypto" && C.S) dessineC(); if (v === "poly" && P.S) dessineP(); if (v === "poly" && A.S) dessineA();
+  document.title = VUES[v][3];
+  if (pousse) history.replaceState(null, "", T.lienVue ? VUES[v][1] : VUES[v][2]);
+  document.querySelectorAll(`#${VUES[v][0]} .entre`).forEach((el, i) => { el.style.animationDelay = Math.round(i * 38 + (((i * 2654435761) >>> 0) % 23)) + "ms"; el.classList.remove("entre"); void el.offsetWidth; el.classList.add("entre"); });
+  if (v === "crypto" && C.S) dessineC(); if (v === "poly" && P.S) dessineP(); if (v === "poly" && A.S) dessineA(); if (v === "accueil") renderAccueil();
 }
 document.querySelector(".switch").addEventListener("click", ev => { const a = ev.target.closest("a[data-vue]"); if (!a) return; ev.preventDefault(); montreVue(a.dataset.vue, true); });
-addEventListener("hashchange", () => { if (T.lienVue) montreVue(location.hash === "#polymarket" ? "poly" : "crypto", false); });
+addEventListener("hashchange", () => { const v = vueDuHash(location.hash); if (T.lienVue && v) montreVue(v, false); });
+/* une carte de l'accueil ouvre le détail du bot, en haut de page (ou sur l'arène) */
+$("vueAccueil").addEventListener("click", ev => { const a = ev.target.closest("a[data-vue]"); if (!a) return; ev.preventDefault(); montreVue(a.dataset.vue, true);
+  const cible = a.dataset.ancre && $(a.dataset.ancre); if (cible) cible.closest(".card")?.scrollIntoView({block: "start"}); else scrollTo(0, 0); });
 
 /* ---------- crypto ---------- */
 const C = {S: null, live: {}, hist: {BTC: [], ETH: []}, lastTick: 0, per: "tout", tab: "rs", BT: null, RS: null, ws: null, subs: "", vus: new Set(), premier: true};
@@ -584,6 +612,86 @@ async function refreshA() {
   try { renderA(); } catch (e) { console.error(e); }
 }
 
+/* ---------- accueil ---------- */
+const etiquetteStatut = st => ({actif: "Actif", pause: "Pause", "coupe-circuit": "Coupe-circuit"}[st] || st || "…");
+const ilYa = t => { const m = Math.max(0, Math.round((Date.now() - new Date(t).getTime()) / 60000)); return isNaN(m) ? "?" : m < 1 ? "à l'instant" : m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`; };
+const retardMin = S => S ? (Date.now() - new Date(S.maj).getTime()) / 60000 : Infinity;
+function statutPill(el, S) {
+  const st = String(S?.statut || ""), r = retardMin(S);
+  el.textContent = r > 60 ? "Arrêté ?" : r > 15 ? "En relance" : etiquetteStatut(st);
+  el.className = "pill " + (r > 60 ? "coupe-circuit" : r > 15 ? "pause" : ["actif", "pause", "coupe-circuit"].includes(st) ? st : "");
+}
+function renderAccueil() {
+  const j = new Date().toLocaleDateString("fr-FR", {weekday: "long", day: "numeric", month: "long"});
+  $("rJour").textContent = j.charAt(0).toUpperCase() + j.slice(1);
+  let somme = 0;
+  if (C.S) {
+    const S = C.S, v = valeurC(), dep = n(S.capital_depart) || 100, d = v - dep; somme += d / dep;
+    compteur($("rCVal"), v, x => esc(fr(x)) + "<small> €</small>", true);
+    $("rCDelta").textContent = `${d >= 0 ? "+" : ""}${fr(d)} € (${pct(d / dep * 100)})`; $("rCDelta").className = "num " + (d >= 0 ? "up" : "down");
+    const btc = prixC("BTC");
+    if (S.btc_prix_depart && btc) { const b = dep * btc / S.btc_prix_depart, e = (v - b) / b * 100; $("rCBtc").textContent = pct(e, 1); $("rCBtc").className = "num " + (e >= 0 ? "up" : "down"); }
+    const pos = Object.entries(S.positions || {});
+    $("rCPos").textContent = pos.length ? pos.map(([s, p]) => (p.sens === "short" ? "short " : "long ") + s).join(" · ") : "aucune";
+    const now = new Date(); $("rCDec").textContent = duree((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1) - now) / 1000);
+    statutPill($("rCStatut"), S);
+    const k = (S.courbe || []).length; if ($("rCSpark")._k !== k) { $("rCSpark")._k = k; $("rCSpark").innerHTML = sparkSvg((S.courbe || []).slice(-240).map(p => n(p.v)), "#7cc4ff", 46); }
+  }
+  if (P.S) {
+    const S = P.S, v = valeurP(), dep = n(S.capital_depart) || 100, d = v - dep; somme += d / dep;
+    compteur($("rPVal"), v, x => esc(fr(x)) + "<small> $</small>", true);
+    $("rPDelta").textContent = `${d >= 0 ? "+" : ""}${fr(d)} $ (${pct(d / dep * 100)})`; $("rPDelta").className = "num " + (d >= 0 ? "up" : "down");
+    const regles = (S.trades || []).filter(t => t.sens === "reglement" || (t.sens === "vente" && t.pnl != null)), g = regles.filter(t => n(t.pnl) > 0).length, pos = posP();
+    $("rPRegles").innerHTML = regles.length ? `<span class="up">${g} gagnés</span><br><span class="down">${regles.length - g} perdus</span>` : "aucun";
+    $("rPCours").textContent = pos.length;
+    const proch = pos.map(([, p]) => new Date(p.echeance).getTime()).filter(t => t > Date.now()).sort((a, b) => a - b)[0];
+    $("rPProchain").textContent = proch ? duree((proch - Date.now()) / 1000) : pos.length ? "en attente" : "-";
+    statutPill($("rPStatut"), S);
+    const k = (S.courbe || []).length + ":" + regles.length + ":" + pos.length;
+    if ($("rPSpark")._k !== k) { $("rPSpark")._k = k; $("rPSpark").innerHTML = sparkSvg((S.courbe || []).slice(-240).map(p => n(p.v)), "#7cc4ff", 46);
+      $("rPScore").innerHTML = regles.slice(-40).map(t => `<i class="${n(t.pnl) > 0 ? "g" : n(t.pnl) < 0 ? "p" : ""}"></i>`).join("") + pos.map(() => `<i class="o"></i>`).join(""); }
+  }
+  if (A.S) {
+    const cs = [...(A.S.concurrents || [])].sort((a, b) => n(b.valeur) - n(a.valeur)), t = cs[0], base = n(A.S.capital_depart) || 100;
+    if (t) { $("rAreneTxt").innerHTML = `En tête sur ${esc(cs.length)} : <span style="color:${esc(t.couleur)}">${esc(t.nom)}</span>`;
+      const d = n(t.valeur) - base; $("rAreneVal").textContent = (d >= 0 ? "+" : "") + fr(d) + " $"; $("rAreneVal").className = "num " + (d >= 0 ? "up" : "down"); }
+  }
+  if (C.S || P.S) ambiance(somme);
+  const rc = retardMin(C.S), rp = retardMin(P.S), pire = Math.max(rc, rp), sante = $("rSante");
+  if (!C.S && !P.S) { sante.textContent = "Chargement…"; sante.className = "pill"; }
+  else if (pire <= 15) { sante.textContent = "Tout tourne"; sante.className = "pill actif"; }
+  else { sante.textContent = pire > 60 ? "Un bot ne répond plus" : "Relance en cours"; sante.className = "pill " + (pire > 60 ? "coupe-circuit" : "pause"); }
+  $("rMaj").textContent = `Crypto mis à jour ${C.S ? ilYa(C.S.maj) : "?"}, Polymarket ${P.S ? ilYa(P.S.maj) : "?"}. Les valeurs bougent en direct avec les prix. Touche une carte pour le détail.`
+    + (pire > 60 && (C.S || P.S) ? " Si un bot ne répond plus depuis plus d'une heure, demande à Claude de vérifier les workflows." : "");
+}
+
+/* ---------- installer sur le téléphone ---------- */
+let invite = null;
+const autonome = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function cache(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function garde(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function renderInstall() {
+  const el = $("rInstall");
+  const mobile = ios || matchMedia("(pointer: coarse)").matches;
+  if (T.lienVue || autonome() || cache("pb-install-masque") || (!mobile && !invite)) { el.hidden = true; return; }
+  const partage = `<svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v10M6.5 6 10 2.5 13.5 6M5 9H4v8.5h12V9h-1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const etapes = ios ? `<ol><li>Touche ${partage} <b>Partager</b> en bas de Safari</li><li>Choisis <b>Sur l'écran d'accueil</b></li><li>Touche <b>Ajouter</b></li></ol>`
+    : invite ? `<button class="bouton" id="rInstaller">Installer l'appli</button>`
+    : `<ol><li>Touche <b>⋮</b> en haut à droite de Chrome</li><li>Choisis <b>Ajouter à l'écran d'accueil</b> puis <b>Installer</b></li></ol>`;
+  el.innerHTML = `<h2>Mets Paper Bot sur ton écran d'accueil</h2><p class="note">Il s'ouvre ensuite en plein écran comme une appli, directement sur cette page.</p>${etapes}<button class="plus" id="rMasque">Plus tard</button>`;
+  el.hidden = false;
+}
+addEventListener("beforeinstallprompt", ev => { ev.preventDefault(); invite = ev; renderInstall(); });
+addEventListener("appinstalled", () => { invite = null; garde("pb-install-masque", "1"); renderInstall(); });
+$("rInstall").addEventListener("click", async ev => {
+  if (ev.target.id === "rMasque") { garde("pb-install-masque", "1"); renderInstall(); }
+  if (ev.target.id === "rInstaller" && invite) { invite.prompt(); try { await invite.userChoice; } catch (e) {} invite = null; renderInstall(); }
+});
+if (!T.json && "serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) navigator.serviceWorker.register("sw.js").catch(() => {});
+/* quand on rouvre l'appli après l'avoir laissée en arrière-plan : tout relire tout de suite */
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshC(); refreshP(); refreshA(); } });
+
 /* ---------- horloge commune ---------- */
 setInterval(() => {
   $("horloge").textContent = new Date().toLocaleTimeString("fr-FR");
@@ -593,12 +701,14 @@ setInterval(() => {
     $("pDot").className = "dot" + (direct || frais ? " on" : ""); $("pLive").textContent = direct ? "prix en direct" : frais ? "bot actif" : "en attente du bot";
     const actif = frais && P.S.statut === "actif"; $("pRadar").style.animationPlayState = actif ? "running" : "paused";
     if (vue === "poly") renderLiveP(); }
-  if (T.parSeconde) T.parSeconde(vue === "poly" ? (P.S ? valeurP() : null) : (C.S ? valeurC() : null), vue);
+  if (vue === "accueil") renderAccueil();
+  if (T.parSeconde) T.parSeconde(vue === "accueil" ? null : vue === "poly" ? (P.S ? valeurP() : null) : (C.S ? valeurC() : null), vue);
 }, 1000);
 
 const ro = new ResizeObserver(es => es.forEach(e => { const w = Math.round(e.contentRect.width); if (e.target._w === w) return; e.target._w = w; if (e.target.id === "cFig" && vue === "crypto") dessineC(); if (e.target.id === "pFig" && vue === "poly") dessineP(); if (e.target.id === "aFig" && vue === "poly") dessineA(); }));
 ro.observe($("cFig")); ro.observe($("pFig")); ro.observe($("aFig"));
 montreVue(vue, false);
+renderInstall();
 compteARebours();
 refreshC(); refreshP(); refreshA(); refreshTestsC(); refreshRechercheP(); historiqueKraken();
 setInterval(refreshA, 60000);
